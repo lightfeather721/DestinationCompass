@@ -2,6 +2,13 @@
 
 使用 Kotlin、Jetpack Compose 与 Material Design 3 构建的 Android 目的地方向工具。
 
+## 应用截图
+
+<p align="center">
+  <img src="docs/screenshots/map-picker.jpg" alt="地图选点与地点详情" width="45%" />
+  <img src="docs/screenshots/compass.jpg" alt="实时目的地方向罗盘" width="45%" />
+</p>
+
 ## 已实现
 
 - 百度地图 Android SDK 地图选点、POI 搜索与反向地理编码
