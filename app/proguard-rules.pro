@@ -1,0 +1,2 @@
+-keep class com.baidu.** { *; }
+-dontwarn com.baidu.**
