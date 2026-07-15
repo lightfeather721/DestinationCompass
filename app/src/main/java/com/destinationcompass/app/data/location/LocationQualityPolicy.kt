@@ -5,7 +5,7 @@ import kotlin.math.max
 
 /** Pure quality checks shared by the Baidu location callback and JVM tests. */
 internal object LocationQualityPolicy {
-    const val MAX_RELIABLE_ACCURACY_METERS = 30f
+    const val MAX_RELIABLE_ACCURACY_METERS = GPS_WEAK_SIGNAL_THRESHOLD_METERS
     private const val MAX_REASONABLE_SPEED_METERS_PER_SECOND = 55f
     private const val MIN_JUMP_ALLOWANCE_METERS = 20.0
     private const val MAX_COMPARABLE_FIX_GAP_SECONDS = 15.0

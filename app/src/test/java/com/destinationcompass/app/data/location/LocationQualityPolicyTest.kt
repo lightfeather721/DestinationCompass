@@ -8,8 +8,8 @@ import org.junit.Test
 class LocationQualityPolicyTest {
     @Test
     fun weakAccuracyIsNotReliable() {
-        assertTrue(LocationQualityPolicy.isReliableAccuracy(5f))
-        assertFalse(LocationQualityPolicy.isReliableAccuracy(80f))
+        assertTrue(LocationQualityPolicy.isReliableAccuracy(43f))
+        assertFalse(LocationQualityPolicy.isReliableAccuracy(43.1f))
     }
 
     @Test

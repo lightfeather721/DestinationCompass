@@ -20,9 +20,9 @@ class LocationStateTest {
     }
 
     @Test
-    fun accuracyAboveThirtyMetersIsNotAccurate() {
-        val weak = LocationState(latitude = 1.0, longitude = 1.0, accuracyMeters = 31f, isValid = false)
-        val precise = LocationState(latitude = 1.0, longitude = 1.0, accuracyMeters = 5f, isValid = true)
+    fun accuracyAboveFortyThreeMetersIsNotAccurate() {
+        val weak = LocationState(latitude = 1.0, longitude = 1.0, accuracyMeters = 43.1f, isValid = false)
+        val precise = LocationState(latitude = 1.0, longitude = 1.0, accuracyMeters = 43f, isValid = true)
         assertFalse(weak.isAccurate)
         assertTrue(precise.isAccurate)
     }

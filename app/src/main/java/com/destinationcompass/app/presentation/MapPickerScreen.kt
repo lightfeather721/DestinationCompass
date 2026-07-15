@@ -108,6 +108,7 @@ import com.baidu.mapapi.model.LatLng
 import com.destinationcompass.app.data.map.MapService
 import com.destinationcompass.app.data.location.LocationState
 import com.destinationcompass.app.data.location.MotionState
+import com.destinationcompass.app.data.location.GPS_WEAK_SIGNAL_THRESHOLD_METERS
 import com.destinationcompass.app.domain.BearingCalculator
 import com.destinationcompass.app.model.Destination
 import eightbitlab.com.blurview.BlurTarget
@@ -280,6 +281,7 @@ fun MapPickerScreen(
                 error = null
                 searchResults = emptyList()
                 onFollowMyLocationChange(false)
+                scope.launch { bottomSheetState.expand() }
                 marker?.remove()
                 marker = mapView.map.addOverlay(
                     MarkerOptions().position(point).icon(createDestinationMarker(context))
@@ -583,13 +585,13 @@ fun MapPickerScreen(
                     val accuracy = locationState.accuracyMeters ?: Float.MAX_VALUE
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = if (accuracy <= 30f && hasPreciseLocation) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.errorContainer
+                        color = if (accuracy <= GPS_WEAK_SIGNAL_THRESHOLD_METERS && hasPreciseLocation) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.errorContainer
                     ) {
                         Text(
                             if (hasPreciseLocation) "定位精度 ±${accuracy.roundToInt()} m" else "当前为模糊定位",
                             Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                             style = MaterialTheme.typography.labelMedium,
-                            color = if (accuracy <= 30f && hasPreciseLocation) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onErrorContainer
+                            color = if (accuracy <= GPS_WEAK_SIGNAL_THRESHOLD_METERS && hasPreciseLocation) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onErrorContainer
                         )
                     }
                     Spacer(Modifier.height(8.dp))

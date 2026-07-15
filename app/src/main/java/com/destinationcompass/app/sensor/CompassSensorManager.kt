@@ -8,8 +8,8 @@ import android.hardware.SensorManager
 import android.hardware.display.DisplayManager
 import android.view.Display
 import android.view.Surface
-import com.destinationcompass.app.domain.BearingCalculator
 import com.destinationcompass.app.domain.CompassProcessor
+import com.destinationcompass.app.domain.OrientationHeadingCalculator
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,7 +22,6 @@ class CompassSensorManager(context: Context) : SensorEventListener {
     private val magneticSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
     private val rotationMatrix = FloatArray(9)
     private val adjustedMatrix = FloatArray(9)
-    private val orientation = FloatArray(3)
     private val processor = CompassProcessor()
     private var reportedAccuracy = CompassAccuracy.UNKNOWN
     private var magneticAnomaly = false
@@ -60,8 +59,7 @@ class CompassSensorManager(context: Context) : SensorEventListener {
             else -> SensorManager.AXIS_X to SensorManager.AXIS_Y
         }
         SensorManager.remapCoordinateSystem(rotationMatrix, axes.first, axes.second, adjustedMatrix)
-        SensorManager.getOrientation(adjustedMatrix, orientation)
-        val rawHeading = BearingCalculator.normalizeDegrees(Math.toDegrees(orientation[0].toDouble()).toFloat())
+        val rawHeading = OrientationHeadingCalculator.headingDegrees(adjustedMatrix)
         _state.value = CompassState(
             heading = processor.process(rawHeading),
             accuracy = effectiveAccuracy(),

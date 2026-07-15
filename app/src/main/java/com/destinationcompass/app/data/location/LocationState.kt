@@ -2,6 +2,8 @@ package com.destinationcompass.app.data.location
 
 import com.destinationcompass.app.model.LocationRefreshInterval
 
+const val GPS_WEAK_SIGNAL_THRESHOLD_METERS = 43f
+
 enum class MotionState { STATIONARY, WALKING, FAST }
 
 data class LocationState(
@@ -20,5 +22,6 @@ data class LocationState(
     val errorMessage: String? = null
 ) {
     val hasFix: Boolean get() = latitude != null && longitude != null
-    val isAccurate: Boolean get() = isValid && (accuracyMeters ?: Float.MAX_VALUE) <= 30f
+    val isAccurate: Boolean get() =
+        isValid && (accuracyMeters ?: Float.MAX_VALUE) <= GPS_WEAK_SIGNAL_THRESHOLD_METERS
 }
