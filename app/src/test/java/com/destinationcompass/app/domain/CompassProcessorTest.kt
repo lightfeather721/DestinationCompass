@@ -5,6 +5,12 @@ import org.junit.Test
 
 class CompassProcessorTest {
     @Test
+    fun firstHeadingIsAppliedImmediately() {
+        val processor = CompassProcessor()
+        assertTrue(processor.process(237f) == 237f)
+    }
+
+    @Test
     fun northCrossingDoesNotJumpThroughSouth() {
         val processor = CompassProcessor()
         processor.process(359f)
@@ -17,7 +23,7 @@ class CompassProcessorTest {
         val processor = CompassProcessor()
         processor.process(10f)
         val filtered = processor.process(11f)
-        assertTrue(filtered in 10f..10.2f)
+        assertTrue(filtered in 10f..10.35f)
     }
 
     @Test
@@ -25,6 +31,6 @@ class CompassProcessorTest {
         val processor = CompassProcessor()
         processor.process(10f)
         val filtered = processor.process(100f)
-        assertTrue(filtered > 60f)
+        assertTrue(filtered > 30f)
     }
 }

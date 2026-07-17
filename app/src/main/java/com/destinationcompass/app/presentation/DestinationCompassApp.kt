@@ -61,7 +61,6 @@ fun DestinationCompassApp(viewModel: MainViewModel) {
     val unit by viewModel.distanceUnit.collectAsState()
     val locationRefreshIntervalMillis by viewModel.locationRefreshIntervalMillis.collectAsState()
     val locationState by viewModel.locationState.collectAsState()
-    val compassMetrics by viewModel.metrics.collectAsState()
     val isOnline by viewModel.isOnline.collectAsState()
     val mapFollowMyLocation by viewModel.mapFollowMyLocation.collectAsState()
     val mapHeadingUp by viewModel.mapHeadingUp.collectAsState()
@@ -96,37 +95,53 @@ fun DestinationCompassApp(viewModel: MainViewModel) {
             modifier = Modifier.padding(contentPadding)
         ) { currentTab ->
             when (currentTab) {
-                AppTab.PLACES -> MapPickerScreen(
-                    initialDestination = destination,
-                    hasLocationPermission = hasLocationPermission,
-                    hasPreciseLocation = hasPreciseLocation,
-                    locationState = locationState,
-                    userHeading = compassMetrics.heading,
-                    isOnline = isOnline,
-                    followMyLocation = mapFollowMyLocation,
-                    headingUp = mapHeadingUp,
-                    mapZoomLevel = mapZoomLevel,
-                    favoriteIds = favoriteIds,
-                    onLocationPermissionResult = viewModel::onLocationPermissionResult,
-                    onFollowMyLocationChange = viewModel::setMapFollowMyLocation,
-                    onHeadingUpChange = viewModel::setMapHeadingUp,
-                    onMapZoomLevelChange = viewModel::setMapZoomLevel,
-                    onFavoriteToggle = { place, isFavorite ->
-                        if (isFavorite) {
-                            viewModel.deleteFavorite(place.id)
-                            scope.launch { snackbar.showSnackbar("已取消收藏 ${place.name}") }
-                        } else {
-                            viewModel.addFavorite(place)
-                            scope.launch { snackbar.showSnackbar("已收藏 ${place.name}") }
+                AppTab.PLACES -> {
+                    // Only the map page observes live heading here. Keeping this collection out
+                    // of the app shell prevents every sensor frame from recomposing navigation.
+                    val compassMetrics by viewModel.metrics.collectAsState()
+                    MapPickerScreen(
+                        initialDestination = destination,
+                        hasLocationPermission = hasLocationPermission,
+                        hasPreciseLocation = hasPreciseLocation,
+                        locationState = locationState,
+                        userHeading = compassMetrics.heading,
+                        isOnline = isOnline,
+                        followMyLocation = mapFollowMyLocation,
+                        headingUp = mapHeadingUp,
+                        mapZoomLevel = mapZoomLevel,
+                        favoriteIds = favoriteIds,
+                        onLocationPermissionResult = viewModel::onLocationPermissionResult,
+                        onFollowMyLocationChange = viewModel::setMapFollowMyLocation,
+                        onHeadingUpChange = viewModel::setMapHeadingUp,
+                        onMapZoomLevelChange = viewModel::setMapZoomLevel,
+                        onFavoriteToggle = { place, isFavorite ->
+                            if (isFavorite) {
+                                viewModel.deleteFavorite(place.id)
+                                scope.launch { snackbar.showSnackbar("已取消收藏 ${place.name}") }
+                            } else {
+                                viewModel.addFavorite(place)
+                                scope.launch { snackbar.showSnackbar("已收藏 ${place.name}") }
+                            }
+                        },
+                        onClearDestination = {
+                            viewModel.clearDestination()
+                            scope.launch { snackbar.showSnackbar("已取消目标，切换为指南针模式") }
+                        },
+                        onConfirm = {
+                            viewModel.setDestination(it)
+                            tab = AppTab.COMPASS
+                            scope.launch { snackbar.showSnackbar("已将 ${it.name} 设为目标") }
                         }
-                    },
-                    onConfirm = {
-                        viewModel.setDestination(it)
-                        tab = AppTab.COMPASS
-                        scope.launch { snackbar.showSnackbar("已将 ${it.name} 设为目标") }
+                    )
+                }
+                AppTab.COMPASS -> CompassScreen(
+                    viewModel = viewModel,
+                    onChooseDestination = { tab = AppTab.PLACES },
+                    onRemoveDestination = {
+                        viewModel.clearDestination()
+                        scope.launch { snackbar.showSnackbar("已移除目标，切换为指南针模式") }
                     }
                 )
-                AppTab.COMPASS -> CompassScreen(viewModel, onChooseDestination = { tab = AppTab.PLACES })
                 AppTab.FAVORITES -> FavoritesScreen(
                     favorites = favorites,
                     currentDestination = destination,

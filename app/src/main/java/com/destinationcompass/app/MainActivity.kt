@@ -7,8 +7,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import com.baidu.mapapi.CoordType
-import com.baidu.mapapi.SDKInitializer
 import com.baidu.location.LocationClient
 import com.destinationcompass.app.presentation.DestinationCompassApp
 import com.destinationcompass.app.presentation.MainViewModel
@@ -21,14 +19,21 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         LocationClient.setAgreePrivacy(true)
-        SDKInitializer.setAgreePrivacy(applicationContext, true)
-        SDKInitializer.initialize(applicationContext)
-        SDKInitializer.setCoordType(CoordType.GCJ02)
         setContent {
             val theme by viewModel.themeMode.collectAsState()
             DestinationCompassTheme(theme) {
                 DestinationCompassApp(viewModel)
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.startCompass()
+    }
+
+    override fun onPause() {
+        viewModel.stopCompass()
+        super.onPause()
     }
 }

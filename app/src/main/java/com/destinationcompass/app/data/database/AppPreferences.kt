@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.map
 private val Context.dataStore by preferencesDataStore("destination_compass")
 
 data class UserPreferences(
-    val destination: Destination,
+    val destination: Destination?,
     val favorites: List<Destination>,
     val themeMode: ThemeMode,
     val distanceUnit: DistanceUnit,
@@ -43,8 +43,13 @@ class AppPreferences(private val context: Context) {
     private val defaults = emptyList<Destination>()
 
     val preferences: Flow<UserPreferences> = context.dataStore.data.map { values ->
+        val storedDestination = values[Keys.destination]
         UserPreferences(
-            destination = decodeDestination(values[Keys.destination]) ?: defaultDestination,
+            destination = if (storedDestination == NO_DESTINATION_SENTINEL) {
+                null
+            } else {
+                decodeDestination(storedDestination) ?: defaultDestination
+            },
             favorites = values[Keys.favorites]?.split("\n")?.mapNotNull(::decodeDestination) ?: defaults,
             themeMode = values[Keys.theme]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.SYSTEM,
             distanceUnit = values[Keys.unit]?.let { runCatching { DistanceUnit.valueOf(it) }.getOrNull() } ?: DistanceUnit.KILOMETERS,
@@ -53,6 +58,7 @@ class AppPreferences(private val context: Context) {
     }
 
     suspend fun setDestination(destination: Destination) = context.dataStore.edit { it[Keys.destination] = encode(destination) }
+    suspend fun clearDestination() = context.dataStore.edit { it[Keys.destination] = NO_DESTINATION_SENTINEL }
     suspend fun setFavorites(favorites: List<Destination>) = context.dataStore.edit { it[Keys.favorites] = favorites.joinToString("\n", transform = ::encode) }
     suspend fun setTheme(mode: ThemeMode) = context.dataStore.edit { it[Keys.theme] = mode.name }
     suspend fun setUnit(unit: DistanceUnit) = context.dataStore.edit { it[Keys.unit] = unit.name }
@@ -79,3 +85,5 @@ class AppPreferences(private val context: Context) {
         return LocationRefreshInterval.normalize(persisted)
     }
 }
+
+private const val NO_DESTINATION_SENTINEL = "__none__"

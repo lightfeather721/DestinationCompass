@@ -70,6 +70,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -106,6 +107,7 @@ import com.baidu.mapapi.map.PolylineOptions
 import com.baidu.mapapi.map.Stroke
 import com.baidu.mapapi.model.LatLng
 import com.destinationcompass.app.data.map.MapService
+import com.destinationcompass.app.data.map.BaiduMapSdkInitializer
 import com.destinationcompass.app.data.location.LocationState
 import com.destinationcompass.app.data.location.MotionState
 import com.destinationcompass.app.data.location.GPS_WEAK_SIGNAL_THRESHOLD_METERS
@@ -135,9 +137,11 @@ fun MapPickerScreen(
     onHeadingUpChange: (Boolean) -> Unit,
     onMapZoomLevelChange: (Float) -> Unit,
     onFavoriteToggle: (Destination, Boolean) -> Unit,
+    onClearDestination: () -> Unit,
     onConfirm: (Destination) -> Unit
 ) {
     val context = LocalContext.current
+    BaiduMapSdkInitializer.ensureInitialized(context)
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val surfaceColor = MaterialTheme.colorScheme.surface
     val surfaceContainerHighColor = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -166,39 +170,30 @@ fun MapPickerScreen(
     )
     val scaffoldState = rememberBottomSheetScaffoldState(bottomSheetState = bottomSheetState)
     val scope = rememberCoroutineScope()
-    var selected by remember(initialDestination) {
-        mutableStateOf(
-            initialDestination ?: Destination(
-                id = "huaian-municipal-government",
-                name = "淮安市人民政府",
-                address = "江苏省淮安市淮安区翔宇南道1号",
-                latitude = 33.551495,
-                longitude = 119.113166
-            )
-        )
-    }
+    var selected by remember(initialDestination) { mutableStateOf(initialDestination) }
     var query by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<Destination>>(emptyList()) }
     var marker by remember { mutableStateOf<Marker?>(null) }
     var currentLocationMarker by remember { mutableStateOf<Marker?>(null) }
     var currentAccuracyCircle by remember { mutableStateOf<Circle?>(null) }
     var currentDestinationLine by remember { mutableStateOf<Polyline?>(null) }
+    var selectionRevision by remember { mutableIntStateOf(0) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    val destinationDistanceMeters = if (locationState.isValid) {
+    val destinationDistanceMeters = selected?.takeIf { locationState.isValid }?.let { destination ->
         val latitude = locationState.latitude
         val longitude = locationState.longitude
         if (latitude != null && longitude != null) {
             BearingCalculator.distanceMeters(
                 latitude,
                 longitude,
-                selected.latitude,
-                selected.longitude
+                destination.latitude,
+                destination.longitude
             )
         } else null
-    } else null
+    }
     val destinationProximity = destinationProximityForDistance(destinationDistanceMeters)
-    val selectedIsFavorite = selected.id in favoriteIds
+    val selectedIsFavorite = selected?.id?.let { it in favoriteIds } ?: false
     val useMovementHeading = shouldUseMovementHeading(locationState)
     val navigationHeading = if (useMovementHeading) locationState.bearingDegrees!! else userHeading
     val navigationHeadingStep = (navigationHeading / 2f).roundToInt() * 2f
@@ -207,6 +202,7 @@ fun MapPickerScreen(
     ) { result -> onLocationPermissionResult(result.values.any { it }) }
 
     fun showDestination(destination: Destination, zoom: Float = 17f) {
+        selectionRevision += 1
         selected = destination
         val point = LatLng(destination.latitude, destination.longitude)
         marker?.remove()
@@ -219,6 +215,20 @@ fun MapPickerScreen(
             currentDestinationLine?.points = listOf(userPoint, point)
         }
         mapView.map.animateMapStatus(MapStatusUpdateFactory.newLatLngZoom(point, zoom))
+    }
+
+    fun clearDestinationSelection() {
+        selectionRevision += 1
+        loading = false
+        error = null
+        searchResults = emptyList()
+        marker?.remove()
+        marker = null
+        currentDestinationLine?.remove()
+        currentDestinationLine = null
+        selected = null
+        onClearDestination()
+        scope.launch { bottomSheetState.expand() }
     }
 
     fun performSearch() {
@@ -277,6 +287,8 @@ fun MapPickerScreen(
         })
         mapView.map.setOnMapClickListener(object : BaiduMap.OnMapClickListener {
             override fun onMapClick(point: LatLng) {
+                selectionRevision += 1
+                val requestRevision = selectionRevision
                 loading = true
                 error = null
                 searchResults = emptyList()
@@ -286,7 +298,9 @@ fun MapPickerScreen(
                 marker = mapView.map.addOverlay(
                     MarkerOptions().position(point).icon(createDestinationMarker(context))
                 ) as Marker
-                mapService.reverseGeocode(point) { result ->
+                selected = Destination(name = "地图选点", latitude = point.latitude, longitude = point.longitude)
+                mapService.reverseGeocode(point) callback@ { result ->
+                    if (requestRevision != selectionRevision) return@callback
                     loading = false
                     result.onSuccess { destination ->
                         selected = destination
@@ -299,7 +313,14 @@ fun MapPickerScreen(
 
             override fun onMapPoiClick(poi: com.baidu.mapapi.map.MapPoi?) = Unit
         })
-        showDestination(selected, mapZoomLevel)
+        mapView.map.setOnMarkerClickListener(object : BaiduMap.OnMarkerClickListener {
+            override fun onMarkerClick(clickedMarker: Marker): Boolean {
+                if (clickedMarker != marker) return false
+                clearDestinationSelection()
+                return true
+            }
+        })
+        selected?.let { showDestination(it, mapZoomLevel) }
     }
 
     LaunchedEffect(isOnline) {
@@ -311,7 +332,7 @@ fun MapPickerScreen(
         }
     }
 
-    LaunchedEffect(locationState.timestampMillis, locationState.isValid, followMyLocation, headingUp) {
+    LaunchedEffect(locationState.timestampMillis, locationState.isValid, followMyLocation, headingUp, selected?.id) {
         if (!locationState.isValid) return@LaunchedEffect
         val latitude = locationState.latitude ?: return@LaunchedEffect
         val longitude = locationState.longitude ?: return@LaunchedEffect
@@ -336,9 +357,12 @@ fun MapPickerScreen(
                     .zIndex(3)
             ) as Marker
         }
-        val destinationPoint = LatLng(selected.latitude, selected.longitude)
+        val destinationPoint = selected?.let { LatLng(it.latitude, it.longitude) }
         val line = currentDestinationLine
-        if (line == null) {
+        if (destinationPoint == null) {
+            line?.remove()
+            currentDestinationLine = null
+        } else if (line == null) {
             currentDestinationLine = mapView.map.addOverlay(
                 PolylineOptions()
                     .points(listOf(point, destinationPoint))
@@ -426,36 +450,46 @@ fun MapPickerScreen(
                             .fillMaxWidth()
                             .padding(start = 24.dp, end = 24.dp, bottom = 24.dp)
                     ) {
+                        val displayedDestination = selected
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.LocationOn, null, tint = MaterialTheme.colorScheme.primary)
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
                                 Text("目标地点", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(selected.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                                Text(displayedDestination?.name ?: "无目标", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                             }
                             if (loading) CircularProgressIndicator(Modifier.width(22.dp), strokeWidth = 2.dp)
                         }
-                        if (selected.address.isNotBlank()) {
-                            Text(selected.address, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Coordinate("纬度", selected.latitude, Modifier.weight(1f))
-                            Coordinate("经度", selected.longitude, Modifier.weight(1f))
-                        }
-                        error?.let { Text(it, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-                        OutlinedButton(
-                            onClick = { onFavoriteToggle(selected, selectedIsFavorite) },
-                            modifier = Modifier.fillMaxWidth().padding(top = 14.dp).height(50.dp)
-                        ) {
-                            Icon(
-                                if (selectedIsFavorite) Icons.Filled.Star else Icons.Outlined.StarOutline,
-                                contentDescription = null
+                        if (displayedDestination == null) {
+                            Text(
+                                "当前未选择目标地点，罗盘将作为普通指南针使用。",
+                                Modifier.padding(top = 10.dp),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(Modifier.width(8.dp))
-                            Text(if (selectedIsFavorite) "取消收藏" else "收藏地点")
-                        }
-                        Button(onClick = { onConfirm(selected) }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp).height(52.dp)) {
-                            Text("确认目标")
+                        } else {
+                            if (displayedDestination.address.isNotBlank()) {
+                                Text(displayedDestination.address, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Coordinate("纬度", displayedDestination.latitude, Modifier.weight(1f))
+                                Coordinate("经度", displayedDestination.longitude, Modifier.weight(1f))
+                            }
+                            error?.let { Text(it, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                            OutlinedButton(
+                                onClick = { onFavoriteToggle(displayedDestination, selectedIsFavorite) },
+                                modifier = Modifier.fillMaxWidth().padding(top = 14.dp).height(50.dp)
+                            ) {
+                                Icon(
+                                    if (selectedIsFavorite) Icons.Filled.Star else Icons.Outlined.StarOutline,
+                                    contentDescription = null
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(if (selectedIsFavorite) "取消收藏" else "收藏地点")
+                            }
+                            Button(onClick = { onConfirm(displayedDestination) }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp).height(52.dp)) {
+                                Text("确认目标")
+                            }
                         }
                     }
                 }
@@ -835,7 +869,7 @@ private class MapMarkerAnimator {
         marker: Marker,
         accuracyCircle: Circle?,
         destinationLine: Polyline?,
-        destination: LatLng,
+        destination: LatLng?,
         target: LatLng,
         durationMillis: Long
     ) {
@@ -853,7 +887,7 @@ private class MapMarkerAnimator {
                 )
                 marker.position = position
                 accuracyCircle?.center = position
-                destinationLine?.points = listOf(position, destination)
+                if (destination != null) destinationLine?.points = listOf(position, destination)
             }
             start()
         }

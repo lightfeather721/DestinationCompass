@@ -34,7 +34,12 @@ class LocationRepository(context: Context) {
     private val _state = MutableStateFlow(LocationState(isLocationEnabled = isLocationEnabled()))
     val state: StateFlow<LocationState> = _state.asStateFlow()
 
-    private val client: LocationClient = LocationClient(appContext)
+    // Creating LocationClient loads Baidu SDK state. Keep it out of MainViewModel's cold-start
+    // construction path; start() is dispatched on IO after the compass listener is registered.
+    private val clientDelegate = lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        LocationClient(appContext).also { it.registerLocationListener(listener) }
+    }
+    private val client: LocationClient get() = clientDelegate.value
     private val locationFilter = LocationKalmanFilter()
     private var previousRawLocation: RawLocation? = null
     private var previousFilteredCoordinate: FilteredCoordinate? = null
@@ -100,10 +105,6 @@ class LocationRepository(context: Context) {
             }
             if (started) mainHandler.postDelayed(this, STALE_CHECK_INTERVAL_MILLIS)
         }
-    }
-
-    init {
-        client.registerLocationListener(listener)
     }
 
     fun hasPermission(): Boolean =
@@ -474,8 +475,10 @@ class LocationRepository(context: Context) {
     fun stop() {
         started = false
         mainHandler.removeCallbacks(staleCheck)
-        client.stop()
-        client.unRegisterLocationListener(listener)
+        if (clientDelegate.isInitialized()) {
+            client.stop()
+            client.unRegisterLocationListener(listener)
+        }
         previousRawLocation = null
         previousFilteredCoordinate = null
         smoothedSpeedMetersPerSecond = 0f
