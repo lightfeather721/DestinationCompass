@@ -22,8 +22,8 @@ android {
         applicationId = "com.destinationcompass.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 22
-        versionName = "1.4.11"
+        versionCode = 30
+        versionName = "1.4.19"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
