@@ -8,6 +8,7 @@ import android.graphics.Bitmap
 import android.graphics.Paint
 import android.graphics.Point
 import android.graphics.drawable.GradientDrawable
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
@@ -30,9 +31,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GpsFixed
@@ -51,6 +54,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
@@ -63,6 +67,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.material3.rememberStandardBottomSheetState
@@ -106,8 +111,13 @@ import com.baidu.mapapi.map.Polyline
 import com.baidu.mapapi.map.PolylineOptions
 import com.baidu.mapapi.map.Stroke
 import com.baidu.mapapi.model.LatLng
+import com.baidu.mapapi.model.LatLngBounds
 import com.destinationcompass.app.data.map.MapService
 import com.destinationcompass.app.data.map.BaiduMapSdkInitializer
+import com.destinationcompass.app.data.map.PlannedRoute
+import com.destinationcompass.app.data.map.RoutePlanningService
+import com.destinationcompass.app.data.map.RoutePreference
+import com.destinationcompass.app.data.map.RouteTravelMode
 import com.destinationcompass.app.data.location.LocationState
 import com.destinationcompass.app.data.location.MotionState
 import com.destinationcompass.app.data.location.GPS_WEAK_SIGNAL_THRESHOLD_METERS
@@ -131,11 +141,16 @@ fun MapPickerScreen(
     followMyLocation: Boolean,
     headingUp: Boolean,
     mapZoomLevel: Float,
+    initialPlannedRoute: PlannedRoute?,
+    navigationActive: Boolean,
     favoriteIds: Set<String>,
     onLocationPermissionResult: (Boolean) -> Unit,
     onFollowMyLocationChange: (Boolean) -> Unit,
     onHeadingUpChange: (Boolean) -> Unit,
     onMapZoomLevelChange: (Float) -> Unit,
+    onRoutePlanned: (Destination, PlannedRoute) -> Unit,
+    onRouteCleared: () -> Unit,
+    onNavigationActiveChange: (Boolean) -> Unit,
     onFavoriteToggle: (Destination, Boolean) -> Unit,
     onClearDestination: () -> Unit,
     onConfirm: (Destination) -> Unit
@@ -150,6 +165,7 @@ fun MapPickerScreen(
     val searchShape = RoundedCornerShape(20.dp)
     val blurOverlayColor = surfaceContainerHighColor.copy(alpha = if (darkSurface) 0.34f else 0.46f)
     val destinationLineColor = Color(0xFF0B57D0).toArgb()
+    val plannedRouteColor = MaterialTheme.colorScheme.primary.toArgb()
     val mapView = remember { TextureMapView(context) }
     val mapBlurTarget = remember(mapView) {
         BlurTarget(context).apply {
@@ -163,6 +179,7 @@ fun MapPickerScreen(
         }
     }
     val mapService = remember { MapService() }
+    val routePlanningService = remember { RoutePlanningService() }
     val markerAnimator = remember { MapMarkerAnimator() }
     val bottomSheetState = rememberStandardBottomSheetState(
         initialValue = SheetValue.PartiallyExpanded,
@@ -177,6 +194,18 @@ fun MapPickerScreen(
     var currentLocationMarker by remember { mutableStateOf<Marker?>(null) }
     var currentAccuracyCircle by remember { mutableStateOf<Circle?>(null) }
     var currentDestinationLine by remember { mutableStateOf<Polyline?>(null) }
+    var plannedRouteLine by remember { mutableStateOf<Polyline?>(null) }
+    var plannedRoute by remember(initialPlannedRoute) { mutableStateOf(initialPlannedRoute) }
+    var routeTravelMode by remember(initialPlannedRoute?.travelMode) {
+        mutableStateOf(initialPlannedRoute?.travelMode ?: RouteTravelMode.WALKING)
+    }
+    var routePreference by remember(initialPlannedRoute?.preference) {
+        mutableStateOf(initialPlannedRoute?.preference ?: RoutePreference.SHORTEST)
+    }
+    var routeLoading by remember { mutableStateOf(false) }
+    var routeRequestRevision by remember { mutableIntStateOf(0) }
+    var lastNavigationRouteOrigin by remember { mutableStateOf<LatLng?>(null) }
+    var lastNavigationRouteRequestMillis by remember { mutableStateOf(0L) }
     var selectionRevision by remember { mutableIntStateOf(0) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -201,7 +230,20 @@ fun MapPickerScreen(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result -> onLocationPermissionResult(result.values.any { it }) }
 
-    fun showDestination(destination: Destination, zoom: Float = 17f) {
+    fun clearPlannedRoute(notify: Boolean = true) {
+        routeRequestRevision += 1
+        routePlanningService.cancel()
+        routeLoading = false
+        plannedRouteLine?.remove()
+        plannedRouteLine = null
+        plannedRoute = null
+        lastNavigationRouteOrigin = null
+        lastNavigationRouteRequestMillis = 0L
+        if (notify) onRouteCleared()
+    }
+
+    fun showDestination(destination: Destination, zoom: Float = 17f, clearRoute: Boolean = true) {
+        if (clearRoute) clearPlannedRoute()
         selectionRevision += 1
         selected = destination
         val point = LatLng(destination.latitude, destination.longitude)
@@ -218,6 +260,7 @@ fun MapPickerScreen(
     }
 
     fun clearDestinationSelection() {
+        clearPlannedRoute()
         selectionRevision += 1
         loading = false
         error = null
@@ -249,6 +292,94 @@ fun MapPickerScreen(
         }
     }
 
+    fun renderPlannedRoute(route: PlannedRoute, fitRoute: Boolean) {
+        plannedRouteLine?.remove()
+        plannedRoute = route
+        plannedRouteLine = mapView.map.addOverlay(
+            PolylineOptions()
+                .points(route.points)
+                .width(maxOf(1, (1.5f * context.resources.displayMetrics.density).roundToInt()))
+                .color(plannedRouteColor)
+                .lineJoinType(PolylineOptions.LineJoinType.LineJoinRound)
+                .lineCapType(PolylineOptions.LineCapType.LineCapRound)
+                .zIndex(2)
+        ) as Polyline
+        if (fitRoute) {
+            val bounds = LatLngBounds.Builder().include(route.points).build()
+            mapView.map.animateMapStatus(
+                MapStatusUpdateFactory.newLatLngZoom(bounds, 64, 120, 64, 160)
+            )
+        }
+    }
+
+    fun performRoutePlanning(navigationUpdate: Boolean = false) {
+        val destination = selected ?: run {
+            error = "请先选择目标地点"
+            return
+        }
+        if (!isOnline) {
+            error = "网络不可用，连接网络后才能规划路线"
+            return
+        }
+        if (!locationState.isValid) {
+            error = "正在获取有效当前位置，请稍后再试"
+            return
+        }
+        val latitude = locationState.latitude ?: return
+        val longitude = locationState.longitude ?: return
+        val origin = LatLng(latitude, longitude)
+        val destinationPoint = LatLng(destination.latitude, destination.longitude)
+        val requestRevision = routeRequestRevision + 1
+        routeRequestRevision = requestRevision
+        routeLoading = true
+        error = null
+
+        routePlanningService.planRoute(
+            origin = origin,
+            destination = destinationPoint,
+            travelMode = routeTravelMode,
+            preference = routePreference
+        ) callback@ { result ->
+            if (requestRevision != routeRequestRevision) return@callback
+            routeLoading = false
+            result.onSuccess { route ->
+                renderPlannedRoute(route, fitRoute = !navigationUpdate)
+                onRoutePlanned(destination, route)
+                if (!navigationUpdate) {
+                    scope.launch { bottomSheetState.partialExpand() }
+                }
+            }.onFailure { error = it.message ?: "路线规划失败" }
+        }
+    }
+
+    fun setRealtimeNavigation(enabled: Boolean) {
+        if (!enabled) {
+            onNavigationActiveChange(false)
+            return
+        }
+        when {
+            !isOnline -> {
+                error = "网络不可用，无法启动实时导航"
+                scope.launch { bottomSheetState.expand() }
+            }
+            !locationState.isValid -> {
+                error = "正在获取有效当前位置，暂时无法启动实时导航"
+                scope.launch { bottomSheetState.expand() }
+            }
+            plannedRoute == null -> {
+                error = "请先规划路线"
+                scope.launch { bottomSheetState.expand() }
+            }
+            else -> {
+                error = null
+                lastNavigationRouteOrigin = null
+                lastNavigationRouteRequestMillis = 0L
+                onNavigationActiveChange(true)
+                scope.launch { bottomSheetState.partialExpand() }
+            }
+        }
+    }
+
     DisposableEffect(lifecycle, mapView) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -262,6 +393,7 @@ fun MapPickerScreen(
             lifecycle.removeObserver(observer)
             markerAnimator.cancel()
             mapService.destroy()
+            routePlanningService.destroy()
             onMapZoomLevelChange(mapView.map.mapStatus.zoom)
             mapView.onDestroy()
         }
@@ -287,6 +419,7 @@ fun MapPickerScreen(
         })
         mapView.map.setOnMapClickListener(object : BaiduMap.OnMapClickListener {
             override fun onMapClick(point: LatLng) {
+                clearPlannedRoute()
                 selectionRevision += 1
                 val requestRevision = selectionRevision
                 loading = true
@@ -320,7 +453,8 @@ fun MapPickerScreen(
                 return true
             }
         })
-        selected?.let { showDestination(it, mapZoomLevel) }
+        selected?.let { showDestination(it, mapZoomLevel, clearRoute = false) }
+        plannedRoute?.let { renderPlannedRoute(it, fitRoute = false) }
     }
 
     LaunchedEffect(isOnline) {
@@ -332,7 +466,14 @@ fun MapPickerScreen(
         }
     }
 
-    LaunchedEffect(locationState.timestampMillis, locationState.isValid, followMyLocation, headingUp, selected?.id) {
+    LaunchedEffect(
+        locationState.timestampMillis,
+        locationState.isValid,
+        followMyLocation,
+        headingUp,
+        selected?.id,
+        plannedRoute
+    ) {
         if (!locationState.isValid) return@LaunchedEffect
         val latitude = locationState.latitude ?: return@LaunchedEffect
         val longitude = locationState.longitude ?: return@LaunchedEffect
@@ -368,7 +509,7 @@ fun MapPickerScreen(
                     .points(listOf(point, destinationPoint))
                     .width(maxOf(2, (.6f * context.resources.displayMetrics.density).roundToInt()))
                     .color(destinationLineColor)
-                    .zIndex(2)
+                    .zIndex(4)
             ) as Polyline
         } else {
             line.points = listOf(point, destinationPoint)
@@ -404,6 +545,63 @@ fun MapPickerScreen(
                 .rotate(cameraRotation)
                 .build()
             mapView.map.animateMapStatus(MapStatusUpdateFactory.newMapStatus(status), animationDuration.toInt())
+        }
+    }
+
+    LaunchedEffect(
+        navigationActive,
+        locationState.timestampMillis,
+        selected?.id,
+        isOnline,
+        routeLoading
+    ) {
+        if (!navigationActive || !isOnline || routeLoading || !locationState.isValid || selected == null) {
+            return@LaunchedEffect
+        }
+        val latitude = locationState.latitude ?: return@LaunchedEffect
+        val longitude = locationState.longitude ?: return@LaunchedEffect
+        val currentOrigin = LatLng(latitude, longitude)
+        val previousOrigin = lastNavigationRouteOrigin
+        val movedMeters = previousOrigin?.let {
+            BearingCalculator.distanceMeters(
+                it.latitude,
+                it.longitude,
+                currentOrigin.latitude,
+                currentOrigin.longitude
+            )
+        } ?: Double.POSITIVE_INFINITY
+        val now = SystemClock.elapsedRealtime()
+        val elapsedMillis = now - lastNavigationRouteRequestMillis
+        val shouldReplan = previousOrigin == null ||
+            (movedMeters >= NAVIGATION_REPLAN_DISTANCE_METERS && elapsedMillis >= NAVIGATION_REPLAN_MIN_INTERVAL_MILLIS)
+        if (shouldReplan) {
+            lastNavigationRouteOrigin = currentOrigin
+            lastNavigationRouteRequestMillis = now
+            performRoutePlanning(navigationUpdate = true)
+        }
+    }
+
+    LaunchedEffect(
+        navigationActive,
+        locationState.timestampMillis,
+        locationState.motionState,
+        plannedRoute
+    ) {
+        val route = plannedRoute ?: return@LaunchedEffect
+        if (navigationActive || !locationState.isValid || locationState.motionState == MotionState.STATIONARY) {
+            return@LaunchedEffect
+        }
+        val latitude = locationState.latitude ?: return@LaunchedEffect
+        val longitude = locationState.longitude ?: return@LaunchedEffect
+        val routeOrigin = route.points.firstOrNull() ?: return@LaunchedEffect
+        val distanceFromRouteOrigin = BearingCalculator.distanceMeters(
+            routeOrigin.latitude,
+            routeOrigin.longitude,
+            latitude,
+            longitude
+        )
+        if (distanceFromRouteOrigin >= STATIC_ROUTE_CANCEL_DISTANCE_METERS) {
+            clearPlannedRoute()
         }
     }
 
@@ -448,6 +646,7 @@ fun MapPickerScreen(
                     Column(
                         Modifier
                             .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
                             .padding(start = 24.dp, end = 24.dp, bottom = 24.dp)
                     ) {
                         val displayedDestination = selected
@@ -474,6 +673,115 @@ fun MapPickerScreen(
                             Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Coordinate("纬度", displayedDestination.latitude, Modifier.weight(1f))
                                 Coordinate("经度", displayedDestination.longitude, Modifier.weight(1f))
+                            }
+                            Text(
+                                "路线规划",
+                                Modifier.padding(top = 16.dp),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                RouteChoiceChip(
+                                    text = "步行",
+                                    selected = routeTravelMode == RouteTravelMode.WALKING,
+                                    onClick = {
+                                        if (routeTravelMode != RouteTravelMode.WALKING) {
+                                            routeTravelMode = RouteTravelMode.WALKING
+                                            clearPlannedRoute()
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                RouteChoiceChip(
+                                    text = "骑行",
+                                    selected = routeTravelMode == RouteTravelMode.CYCLING,
+                                    onClick = {
+                                        if (routeTravelMode != RouteTravelMode.CYCLING) {
+                                            routeTravelMode = RouteTravelMode.CYCLING
+                                            clearPlannedRoute()
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                RouteChoiceChip(
+                                    text = "距离最短",
+                                    selected = routePreference == RoutePreference.SHORTEST,
+                                    onClick = {
+                                        if (routePreference != RoutePreference.SHORTEST) {
+                                            routePreference = RoutePreference.SHORTEST
+                                            clearPlannedRoute()
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                RouteChoiceChip(
+                                    text = "时间最快",
+                                    selected = routePreference == RoutePreference.FASTEST,
+                                    onClick = {
+                                        if (routePreference != RoutePreference.FASTEST) {
+                                            routePreference = RoutePreference.FASTEST
+                                            clearPlannedRoute()
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            plannedRoute?.let { route ->
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                                ) {
+                                    Text(
+                                        "${route.travelMode.displayName} · ${formatRouteDistance(route.distanceMeters)} · " +
+                                            "${formatRouteDuration(route.durationSeconds)} · ${route.preference.displayName}",
+                                        Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("实时导航", style = MaterialTheme.typography.titleSmall)
+                                        Text(
+                                            "移动时自动重新规划路线",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Switch(
+                                        checked = navigationActive,
+                                        onCheckedChange = ::setRealtimeNavigation
+                                    )
+                                }
+                            }
+                            Button(
+                                onClick = { performRoutePlanning() },
+                                enabled = !routeLoading,
+                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(50.dp)
+                            ) {
+                                if (routeLoading) {
+                                    CircularProgressIndicator(
+                                        Modifier.width(20.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                }
+                                Text(if (routeLoading) "正在规划…" else "规划${routeTravelMode.displayName}路线")
                             }
                             error?.let { Text(it, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                             OutlinedButton(
@@ -607,6 +915,47 @@ fun MapPickerScreen(
                                 }
                             )
                             HorizontalDivider(Modifier.padding(start = 56.dp))
+                        }
+                    }
+                }
+            }
+            AnimatedVisibility(
+                visible = plannedRoute != null && searchResults.isEmpty(),
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 96.dp, bottom = 56.dp)
+            ) {
+                val route = plannedRoute
+                if (route != null) {
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shadowElevation = 6.dp
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    if (navigationActive) "路线导航中" else "路线已规划",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    "${route.travelMode.displayName} · ${formatRouteDistance(route.distanceMeters)} · " +
+                                        formatRouteDuration(route.durationSeconds),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1
+                                )
+                            }
+                            Button(
+                                onClick = { setRealtimeNavigation(!navigationActive) },
+                                modifier = Modifier.height(42.dp)
+                            ) {
+                                Text(if (navigationActive) "结束导航" else "实时导航")
+                            }
                         }
                     }
                 }
@@ -860,6 +1209,9 @@ private fun createHeadingMarker(context: Context): BitmapDescriptor {
 }
 
 private const val MIN_GPS_HEADING_SPEED_METERS_PER_SECOND = 1f
+private const val NAVIGATION_REPLAN_DISTANCE_METERS = 5.0
+private const val NAVIGATION_REPLAN_MIN_INTERVAL_MILLIS = 3_000L
+private const val STATIC_ROUTE_CANCEL_DISTANCE_METERS = 5.0
 
 private class MapMarkerAnimator {
     private var positionAnimator: ValueAnimator? = null
@@ -941,6 +1293,32 @@ private fun createDestinationMarker(context: Context): BitmapDescriptor {
         Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE }
     )
     return BitmapDescriptorFactory.fromBitmap(bitmap)
+}
+
+@Composable
+private fun RouteChoiceChip(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(text) },
+        modifier = modifier
+    )
+}
+
+private fun formatRouteDistance(distanceMeters: Int): String = if (distanceMeters < 1_000) {
+    "$distanceMeters m"
+} else {
+    String.format(Locale.getDefault(), "%.1f km", distanceMeters / 1_000f)
+}
+
+private fun formatRouteDuration(durationSeconds: Int): String {
+    val minutes = (durationSeconds / 60f).roundToInt().coerceAtLeast(1)
+    return if (minutes < 60) "$minutes 分钟" else "${minutes / 60} 小时 ${minutes % 60} 分钟"
 }
 
 @Composable

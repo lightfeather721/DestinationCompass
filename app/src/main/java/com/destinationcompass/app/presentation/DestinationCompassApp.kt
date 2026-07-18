@@ -65,6 +65,8 @@ fun DestinationCompassApp(viewModel: MainViewModel) {
     val mapFollowMyLocation by viewModel.mapFollowMyLocation.collectAsState()
     val mapHeadingUp by viewModel.mapHeadingUp.collectAsState()
     val mapZoomLevel by viewModel.mapZoomLevel.collectAsState()
+    val plannedRoute by viewModel.plannedRoute.collectAsState()
+    val mapNavigationActive by viewModel.mapNavigationActive.collectAsState()
     val context = LocalContext.current
     val favoriteIds = remember(favorites) { favorites.mapTo(mutableSetOf()) { it.id } }
     val snackbar = remember { SnackbarHostState() }
@@ -73,6 +75,13 @@ fun DestinationCompassApp(viewModel: MainViewModel) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
     val hasPreciseLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
+    fun changeTab(target: AppTab) {
+        if (tab == AppTab.PLACES && target != AppTab.PLACES) {
+            viewModel.clearPlannedRouteIfNavigationInactive()
+        }
+        tab = target
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
@@ -80,7 +89,7 @@ fun DestinationCompassApp(viewModel: MainViewModel) {
                 AppTab.entries.forEach { item ->
                     NavigationBarItem(
                         selected = tab == item,
-                        onClick = { tab = item },
+                        onClick = { changeTab(item) },
                         icon = { Icon(if (tab == item) item.selectedIcon else item.unselectedIcon, item.label) },
                         label = { Text(item.label) }
                     )
@@ -109,11 +118,16 @@ fun DestinationCompassApp(viewModel: MainViewModel) {
                         followMyLocation = mapFollowMyLocation,
                         headingUp = mapHeadingUp,
                         mapZoomLevel = mapZoomLevel,
+                        initialPlannedRoute = plannedRoute,
+                        navigationActive = mapNavigationActive,
                         favoriteIds = favoriteIds,
                         onLocationPermissionResult = viewModel::onLocationPermissionResult,
                         onFollowMyLocationChange = viewModel::setMapFollowMyLocation,
                         onHeadingUpChange = viewModel::setMapHeadingUp,
                         onMapZoomLevelChange = viewModel::setMapZoomLevel,
+                        onRoutePlanned = viewModel::setPlannedRoute,
+                        onRouteCleared = viewModel::clearPlannedRoute,
+                        onNavigationActiveChange = viewModel::setMapNavigationActive,
                         onFavoriteToggle = { place, isFavorite ->
                             if (isFavorite) {
                                 viewModel.deleteFavorite(place.id)
@@ -129,14 +143,14 @@ fun DestinationCompassApp(viewModel: MainViewModel) {
                         },
                         onConfirm = {
                             viewModel.setDestination(it)
-                            tab = AppTab.COMPASS
+                            changeTab(AppTab.COMPASS)
                             scope.launch { snackbar.showSnackbar("已将 ${it.name} 设为目标") }
                         }
                     )
                 }
                 AppTab.COMPASS -> CompassScreen(
                     viewModel = viewModel,
-                    onChooseDestination = { tab = AppTab.PLACES },
+                    onChooseDestination = { changeTab(AppTab.PLACES) },
                     onRemoveDestination = {
                         viewModel.clearDestination()
                         scope.launch { snackbar.showSnackbar("已移除目标，切换为指南针模式") }
@@ -147,7 +161,7 @@ fun DestinationCompassApp(viewModel: MainViewModel) {
                     currentDestination = destination,
                     onUse = {
                         viewModel.setDestination(it)
-                        tab = AppTab.COMPASS
+                        changeTab(AppTab.COMPASS)
                     },
                     onAdd = {
                         viewModel.addFavorite(it)
