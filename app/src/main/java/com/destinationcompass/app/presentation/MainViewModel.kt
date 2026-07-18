@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.destinationcompass.app.data.database.AppPreferences
 import com.destinationcompass.app.data.location.LocationRepository
 import com.destinationcompass.app.data.location.LocationState
+import com.destinationcompass.app.data.map.PlannedRoute
 import com.destinationcompass.app.data.network.NetworkMonitor
 import com.destinationcompass.app.domain.BearingCalculator
 import com.destinationcompass.app.model.Destination
@@ -61,6 +62,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _mapFollowMyLocation = MutableStateFlow(false)
     private val _mapHeadingUp = MutableStateFlow(false)
     private val _mapZoomLevel = MutableStateFlow(DEFAULT_MAP_ZOOM_LEVEL)
+    private val _plannedRoute = MutableStateFlow<PlannedRoute?>(null)
+    private val _mapNavigationActive = MutableStateFlow(false)
     private var cachedDeclination = 0f
     private var declinationLatitude: Double? = null
     private var declinationLongitude: Double? = null
@@ -96,6 +99,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val mapFollowMyLocation = _mapFollowMyLocation.asStateFlow()
     val mapHeadingUp = _mapHeadingUp.asStateFlow()
     val mapZoomLevel = _mapZoomLevel.asStateFlow()
+    val plannedRoute = _plannedRoute.asStateFlow()
+    val mapNavigationActive = _mapNavigationActive.asStateFlow()
 
     val metrics = combine(destination, locationState, compassState) { target, location, compass ->
         DirectionInput(target, location, compass)
@@ -170,8 +175,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun startCompass() = sensors.start()
     fun stopCompass() = sensors.stop()
-    fun setDestination(value: Destination) = viewModelScope.launch { preferences.setDestination(value) }
-    fun clearDestination() = viewModelScope.launch { preferences.clearDestination() }
+    fun setDestination(value: Destination) {
+        if (!routeEndsAt(value)) clearPlannedRoute()
+        viewModelScope.launch { preferences.setDestination(value) }
+    }
+    fun clearDestination() {
+        clearPlannedRoute()
+        viewModelScope.launch { preferences.clearDestination() }
+    }
+    fun setPlannedRoute(destination: Destination, route: PlannedRoute) {
+        _plannedRoute.value = route
+        viewModelScope.launch { preferences.setDestination(destination) }
+    }
+    fun clearPlannedRoute() {
+        _plannedRoute.value = null
+        _mapNavigationActive.value = false
+    }
+    fun clearPlannedRouteIfNavigationInactive() {
+        if (!_mapNavigationActive.value) clearPlannedRoute()
+    }
+    fun setMapNavigationActive(enabled: Boolean) {
+        val canNavigate = _plannedRoute.value != null
+        _mapNavigationActive.value = enabled && canNavigate
+        if (enabled && canNavigate) {
+            _mapFollowMyLocation.value = true
+            _mapHeadingUp.value = true
+        }
+    }
     fun addFavorite(value: Destination) = viewModelScope.launch {
         val list = favorites.value.filterNot { it.id == value.id } + value
         preferences.setFavorites(list)
@@ -187,7 +217,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun setMapFollowMyLocation(enabled: Boolean) {
         _mapFollowMyLocation.value = enabled
-        if (!enabled) _mapHeadingUp.value = false
+        if (!enabled) {
+            _mapHeadingUp.value = false
+            _mapNavigationActive.value = false
+        }
     }
     fun setMapHeadingUp(enabled: Boolean) {
         _mapHeadingUp.value = enabled
@@ -196,6 +229,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (zoomLevel.isFinite()) {
             _mapZoomLevel.value = zoomLevel.coerceIn(MIN_MAP_ZOOM_LEVEL, MAX_MAP_ZOOM_LEVEL)
         }
+    }
+
+    private fun routeEndsAt(destination: Destination): Boolean {
+        val end = _plannedRoute.value?.points?.lastOrNull() ?: return false
+        return abs(end.latitude - destination.latitude) < 0.000001 &&
+            abs(end.longitude - destination.longitude) < 0.000001
     }
 
     private fun declinationFor(location: LocationState): Float {
