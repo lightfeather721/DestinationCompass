@@ -9,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,10 +21,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.LocationOn
@@ -33,14 +36,9 @@ import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.GpsOff
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.WarningAmber
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -60,12 +58,20 @@ import com.destinationcompass.app.data.location.MotionState
 import com.destinationcompass.app.model.DistanceUnit
 import com.destinationcompass.app.presentation.components.CompassDial
 import com.destinationcompass.app.domain.BearingCalculator
+import com.destinationcompass.app.ui.liquidglass.GlassCard
+import com.destinationcompass.app.ui.liquidglass.GlassQuality
+import com.destinationcompass.app.ui.liquidglass.GlassSurface
+import com.destinationcompass.app.ui.liquidglass.GlassTokens
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import java.util.Locale
 import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CompassScreen(
+    backdrop: LayerBackdrop,
     viewModel: MainViewModel,
     onChooseDestination: () -> Unit,
     onRemoveDestination: () -> Unit
@@ -87,23 +93,49 @@ fun CompassScreen(
     } else {
         DestinationProximity.FAR
     }
+    val backgroundColor = MaterialTheme.colorScheme.background
+    val cardBackdrop = rememberLayerBackdrop {
+        drawRect(backgroundColor)
+        drawContent()
+    }
 
-    Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
+    // Keep the glass source separate from the page layer exported to the tabs.
+    // Recording and sampling the same LayerBackdrop in one draw pass creates a
+    // recursive render graph on Android 12+, which crashes the renderer.
+    Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .layerBackdrop(cardBackdrop)
+                .background(backgroundColor)
+        )
+        Column(
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
         Spacer(Modifier.height(18.dp))
-        Surface(
+        GlassCard(
+            backdrop = cardBackdrop,
             shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            quality = GlassQuality.High,
+            interactive = true,
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Row(
-                    modifier = Modifier.weight(1f).clickable(onClick = onChooseDestination),
+                    modifier = Modifier.weight(1f).clickable(
+                        interactionSource = null,
+                        indication = null,
+                        onClick = onChooseDestination
+                    ),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer) {
+                    GlassSurface(
+                        backdrop = cardBackdrop,
+                        shape = MaterialTheme.shapes.large,
+                        quality = GlassQuality.High,
+                        surfaceColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
+                    ) {
                         Icon(Icons.Filled.LocationOn, null, Modifier.padding(10.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
                     }
                     Spacer(Modifier.width(12.dp))
@@ -128,33 +160,46 @@ fun CompassScreen(
 
         Spacer(Modifier.height(24.dp))
         BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            CompassDial(
-                heading = metrics.heading,
-                relativeDirection = metrics.relativeDirection,
-                active = if (destination == null) {
-                    compassUiState.isAvailable && !compassUiState.calibrationRequired
-                } else {
-                    metrics.isDirectionReliable
-                },
-                showTargetArrow = destination != null && metrics.hasTargetDirection,
-                // Do not initialize the target-arrow animation from the temporary north
-                // placeholder. The first valid GPS target vector must appear immediately.
-                directionReady = metrics.hasTargetDirection,
-                headingReady = compassUiState.hasHeading,
-                size = minOf(maxWidth, 316.dp)
-            )
+            val dialSize = minOf(maxWidth, 316.dp)
+            GlassCard(
+                backdrop = cardBackdrop,
+                modifier = Modifier.size(dialSize),
+                shape = CircleShape,
+                quality = GlassQuality.High,
+                blurRadius = GlassTokens.StrongBlurRadius,
+                surfaceColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                interactive = true
+            ) {
+                CompassDial(
+                    heading = metrics.heading,
+                    relativeDirection = metrics.relativeDirection,
+                    active = if (destination == null) {
+                        compassUiState.isAvailable && !compassUiState.calibrationRequired
+                    } else {
+                        metrics.isDirectionReliable
+                    },
+                    showTargetArrow = destination != null && metrics.hasTargetDirection,
+                    // Do not initialize the target-arrow animation from the temporary north
+                    // placeholder. The first valid GPS target vector must appear immediately.
+                    directionReady = metrics.hasTargetDirection,
+                    // Heading and readiness come from the same metrics emission,
+                    // so the first cold-start sample is displayed immediately.
+                    headingReady = metrics.hasHeading,
+                    size = dialSize
+                )
+            }
         }
         Spacer(Modifier.height(18.dp))
         Text(
             when {
-                destination == null && compassUiState.hasHeading && !compassUiState.usesMagneticNorth ->
+                destination == null && metrics.hasHeading && !compassUiState.usesMagneticNorth ->
                     "当前相对朝向 ${metrics.heading.roundToInt()}° · 设备不支持磁北参考"
                 destination == null && compassUiState.isAvailable ->
                     "当前朝向 ${BearingCalculator.directionName(metrics.heading)} ${metrics.heading.roundToInt()}°"
                 destination == null -> "方向传感器不可用"
-                compassUiState.hasHeading && !compassUiState.usesMagneticNorth ->
+                metrics.hasHeading && !compassUiState.usesMagneticNorth ->
                     "设备仅支持相对方向，无法生成目标箭头"
-                compassUiState.hasHeading && !metrics.hasTargetDirection ->
+                metrics.hasHeading && !metrics.hasTargetDirection ->
                     "当前朝向 ${BearingCalculator.directionName(metrics.heading)} ${metrics.heading.roundToInt()}° · 正在定位"
                 metrics.isDirectionReliable -> "沿箭头方向前进"
                 locationState.hasFix -> "方向更新已暂停，等待可靠数据"
@@ -165,9 +210,11 @@ fun CompassScreen(
         )
         if (destination == null) {
             Spacer(Modifier.height(16.dp))
-            Card(
+            GlassCard(
+                backdrop = cardBackdrop,
                 shape = MaterialTheme.shapes.extraLarge,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                quality = GlassQuality.High,
+                interactive = true,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Metric(
@@ -178,9 +225,12 @@ fun CompassScreen(
             }
         } else {
             Spacer(Modifier.height(8.dp))
-            Surface(
+            GlassCard(
+                backdrop = cardBackdrop,
                 shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
+                quality = GlassQuality.High,
+                blurRadius = GlassTokens.StrongBlurRadius,
+                interactive = true
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -201,13 +251,19 @@ fun CompassScreen(
                 exit = fadeOut()
             ) {
                 Column(Modifier.padding(top = 10.dp)) {
-                    DestinationProximityNotice(destinationProximity, metrics.distanceMeters)
+                    DestinationProximityNotice(
+                        proximity = destinationProximity,
+                        distanceMeters = metrics.distanceMeters,
+                        backdrop = cardBackdrop
+                    )
                 }
             }
             Spacer(Modifier.height(16.dp))
-            Card(
+            GlassCard(
+                backdrop = cardBackdrop,
                 shape = MaterialTheme.shapes.extraLarge,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                quality = GlassQuality.High,
+                interactive = true,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -220,6 +276,7 @@ fun CompassScreen(
                 }
             }
             LocationStatusCard(
+                backdrop = cardBackdrop,
                 state = locationState,
                 hasPermission = hasLocationPermission,
                 hasPrecisePermission = hasPreciseLocation,
@@ -237,8 +294,13 @@ fun CompassScreen(
             enter = fadeIn(),
             exit = fadeOut()
         ) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+            GlassCard(
+                backdrop = cardBackdrop,
+                shape = MaterialTheme.shapes.extraLarge,
+                quality = GlassQuality.High,
+                blurRadius = GlassTokens.StrongBlurRadius,
+                surfaceColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.20f),
+                interactive = true,
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
             ) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -259,12 +321,14 @@ fun CompassScreen(
                 }
             }
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(108.dp))
+        }
     }
 }
 
 @Composable
 private fun LocationStatusCard(
+    backdrop: Backdrop,
     state: LocationState,
     hasPermission: Boolean,
     hasPrecisePermission: Boolean,
@@ -274,9 +338,9 @@ private fun LocationStatusCard(
     val dark = isSystemInDarkTheme()
     val accurate = hasPermission && hasPrecisePermission && state.isLocationEnabled && state.isAccurate
     val containerColor = if (accurate) {
-        if (dark) Color(0xFF173D25) else Color(0xFFE0F5E6)
+        if (dark) Color(0xFF30D158).copy(alpha = 0.18f) else Color(0xFF34C759).copy(alpha = 0.16f)
     } else {
-        MaterialTheme.colorScheme.errorContainer
+        MaterialTheme.colorScheme.error.copy(alpha = 0.16f)
     }
     val contentColor = if (accurate) {
         if (dark) Color(0xFFB7F2C7) else Color(0xFF135D2B)
@@ -301,8 +365,13 @@ private fun LocationStatusCard(
         else -> "正在请求高精度 GPS 数据"
     }
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = containerColor),
+    GlassCard(
+        backdrop = backdrop,
+        shape = MaterialTheme.shapes.extraLarge,
+        quality = GlassQuality.High,
+        blurRadius = GlassTokens.StrongBlurRadius,
+        surfaceColor = containerColor,
+        interactive = true,
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {

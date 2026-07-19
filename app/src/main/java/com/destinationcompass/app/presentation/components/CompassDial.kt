@@ -53,7 +53,6 @@ fun CompassDial(
         relativeDirection,
         directionReady && showTargetArrow
     )
-
     val colorScheme = androidx.compose.material3.MaterialTheme.colorScheme
     val primary = colorScheme.primary
     val onSurface = colorScheme.onSurface
@@ -74,7 +73,9 @@ fun CompassDial(
         Canvas(Modifier.fillMaxSize()) {
             val center = this.center
             val radius = this.size.minDimension / 2f
-            drawCircle(surfaceContainer, radius)
+            // Keep the dial face translucent so the parent liquid-glass layer
+            // remains visible instead of being covered by an opaque MD3 circle.
+            drawCircle(surfaceContainer.copy(alpha = 0.10f), radius)
             drawCircle(outline, radius - 1.dp.toPx(), style = Stroke(1.dp.toPx()))
             drawCircle(outline.copy(alpha = 0.55f), radius * .78f, style = Stroke(1.dp.toPx()))
 
@@ -160,6 +161,7 @@ fun CompassDial(
                 style = Stroke(3.dp.toPx(), cap = StrokeCap.Round)
             )
         }
+
     }
 }
 
@@ -188,4 +190,4 @@ private fun rememberContinuousAnimatedAngle(angle: Float, ready: Boolean): Float
     }
 }
 
-private const val COMPASS_ANIMATION_MILLIS = 100
+private const val COMPASS_ANIMATION_MILLIS = 60
