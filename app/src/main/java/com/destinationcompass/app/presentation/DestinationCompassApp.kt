@@ -10,7 +10,16 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Map
@@ -20,13 +29,9 @@ import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.StarOutline
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -36,9 +41,18 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.destinationcompass.app.ui.liquidglass.GlassNavigationItem
+import com.destinationcompass.app.ui.liquidglass.GlassNavigationBar
+import com.destinationcompass.app.ui.liquidglass.GlassSnackbarHost
+import com.destinationcompass.app.ui.liquidglass.rememberWindowAlignedLayerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.launch
 
 private enum class AppTab(
@@ -74,6 +88,48 @@ fun DestinationCompassApp(viewModel: MainViewModel) {
     val hasLocationPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
     val hasPreciseLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    val backgroundColor = MaterialTheme.colorScheme.background
+    // AnimatedContent keeps the outgoing and incoming pages attached together.
+    // Each page needs its own source: otherwise the outgoing page can detach last
+    // and clear the shared LayerBackdrop coordinates used by the new page's tabs.
+    val placesBackdrop = rememberLayerBackdrop {
+        drawRect(backgroundColor)
+        drawContent()
+    }
+    val compassBackdrop = rememberLayerBackdrop {
+        drawRect(backgroundColor)
+        drawContent()
+    }
+    val favoritesBackdrop = rememberLayerBackdrop {
+        drawRect(backgroundColor)
+        drawContent()
+    }
+    val settingsBackdrop = rememberLayerBackdrop {
+        drawRect(backgroundColor)
+        drawContent()
+    }
+    val activePageBackdrop = when (tab) {
+        AppTab.PLACES -> placesBackdrop
+        AppTab.COMPASS -> compassBackdrop
+        AppTab.FAVORITES -> favoritesBackdrop
+        AppTab.SETTINGS -> settingsBackdrop
+    }
+    val mapDetailSheetBackdrop = rememberWindowAlignedLayerBackdrop()
+    val fullScreenCardBackdrop = rememberWindowAlignedLayerBackdrop()
+    val navigationBackdrop = if (tab == AppTab.PLACES) {
+        rememberCombinedBackdrop(placesBackdrop, mapDetailSheetBackdrop)
+    } else {
+        activePageBackdrop
+    }
+    val navigationItems = remember {
+        AppTab.entries.map { item ->
+            GlassNavigationItem(
+                label = item.label,
+                selectedIcon = item.selectedIcon,
+                unselectedIcon = item.unselectedIcon
+            )
+        }
+    }
 
     fun changeTab(target: AppTab) {
         if (tab == AppTab.PLACES && target != AppTab.PLACES) {
@@ -82,33 +138,42 @@ fun DestinationCompassApp(viewModel: MainViewModel) {
         tab = target
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
-        bottomBar = {
-            NavigationBar {
-                AppTab.entries.forEach { item ->
-                    NavigationBarItem(
-                        selected = tab == item,
-                        onClick = { changeTab(item) },
-                        icon = { Icon(if (tab == item) item.selectedIcon else item.unselectedIcon, item.label) },
-                        label = { Text(item.label) }
-                    )
-                }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(backgroundColor)
+            .then(fullScreenCardBackdrop.sourceModifier)
+            .layerBackdrop(fullScreenCardBackdrop.layerBackdrop)
+    ) {
+        Scaffold(
+            containerColor = backgroundColor,
+            // Keep status-bar protection, but let page rendering continue under
+            // ColorOS' gesture area so the handle no longer sits on a blank band.
+            contentWindowInsets = WindowInsets.safeDrawing.only(
+                WindowInsetsSides.Horizontal + WindowInsetsSides.Top
+            ),
+            snackbarHost = {
+                GlassSnackbarHost(
+                    hostState = snackbar,
+                    backdrop = navigationBackdrop,
+                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 92.dp)
+                )
             }
-        }
-    ) { contentPadding ->
-        AnimatedContent(
-            targetState = tab,
-            transitionSpec = { sharedAxisTransition(initialState.ordinal, targetState.ordinal) },
-            label = "Material shared axis tab transition",
-            modifier = Modifier.padding(contentPadding)
-        ) { currentTab ->
-            when (currentTab) {
+        ) { contentPadding ->
+            AnimatedContent(
+                targetState = tab,
+                transitionSpec = { sharedAxisTransition(initialState.ordinal, targetState.ordinal) },
+                label = "Material shared axis tab transition",
+                modifier = Modifier.padding(contentPadding)
+            ) { currentTab ->
+                when (currentTab) {
                 AppTab.PLACES -> {
                     // Only the map page observes live heading here. Keeping this collection out
                     // of the app shell prevents every sensor frame from recomposing navigation.
                     val compassMetrics by viewModel.metrics.collectAsState()
                     MapPickerScreen(
+                        backdrop = placesBackdrop,
+                        detailSheetBackdrop = mapDetailSheetBackdrop,
                         initialDestination = destination,
                         hasLocationPermission = hasLocationPermission,
                         hasPreciseLocation = hasPreciseLocation,
@@ -149,6 +214,7 @@ fun DestinationCompassApp(viewModel: MainViewModel) {
                     )
                 }
                 AppTab.COMPASS -> CompassScreen(
+                    backdrop = compassBackdrop,
                     viewModel = viewModel,
                     onChooseDestination = { changeTab(AppTab.PLACES) },
                     onRemoveDestination = {
@@ -157,6 +223,8 @@ fun DestinationCompassApp(viewModel: MainViewModel) {
                     }
                 )
                 AppTab.FAVORITES -> FavoritesScreen(
+                    backdrop = favoritesBackdrop,
+                    dialogBackdrop = fullScreenCardBackdrop,
                     favorites = favorites,
                     currentDestination = destination,
                     onUse = {
@@ -171,6 +239,8 @@ fun DestinationCompassApp(viewModel: MainViewModel) {
                     onDelete = viewModel::deleteFavorite
                 )
                 AppTab.SETTINGS -> SettingsScreen(
+                    backdrop = settingsBackdrop,
+                    dialogBackdrop = fullScreenCardBackdrop,
                     themeMode = theme,
                     unit = unit,
                     locationRefreshIntervalMillis = locationRefreshIntervalMillis,
@@ -179,8 +249,21 @@ fun DestinationCompassApp(viewModel: MainViewModel) {
                     onUnitChange = viewModel::setUnit,
                     onLocationRefreshIntervalChange = viewModel::setLocationRefreshInterval
                 )
+                }
             }
         }
+
+        GlassNavigationBar(
+            backdrop = navigationBackdrop,
+            selectedIndex = tab.ordinal,
+            items = navigationItems,
+            onItemSelected = { index -> changeTab(AppTab.entries[index]) },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .navigationBarsPadding()
+                .height(64.dp)
+        )
     }
 }
 

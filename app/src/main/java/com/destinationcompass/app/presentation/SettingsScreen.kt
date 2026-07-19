@@ -2,8 +2,10 @@ package com.destinationcompass.app.presentation
 
 import android.content.Intent
 import android.provider.Settings
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -14,24 +16,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Straighten
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -48,12 +45,25 @@ import com.destinationcompass.app.BuildConfig
 import com.destinationcompass.app.model.DistanceUnit
 import com.destinationcompass.app.model.LocationRefreshInterval
 import com.destinationcompass.app.model.ThemeMode
+import com.destinationcompass.app.ui.liquidglass.GlassAlertDialog
+import com.destinationcompass.app.ui.liquidglass.GlassButton
+import com.destinationcompass.app.ui.liquidglass.GlassCard
+import com.destinationcompass.app.ui.liquidglass.GlassQuality
+import com.destinationcompass.app.ui.liquidglass.GlassSlider
+import com.destinationcompass.app.ui.liquidglass.GlassSurface
+import com.destinationcompass.app.ui.liquidglass.GlassTokens
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlin.math.roundToInt
 
 private enum class SettingsDialog { THEME, UNIT, LOCATION_REFRESH, CALIBRATION, ABOUT }
 
 @Composable
 fun SettingsScreen(
+    backdrop: LayerBackdrop,
+    dialogBackdrop: Backdrop,
     themeMode: ThemeMode,
     unit: DistanceUnit,
     locationRefreshIntervalMillis: Long,
@@ -64,11 +74,23 @@ fun SettingsScreen(
 ) {
     var dialog by remember { mutableStateOf<SettingsDialog?>(null) }
     val context = LocalContext.current
+    val backgroundColor = MaterialTheme.colorScheme.background
+    val cardBackdrop = rememberLayerBackdrop {
+        drawRect(backgroundColor)
+        drawContent()
+    }
 
-    LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, top = 16.dp, end = 20.dp, bottom = 36.dp)
-    ) {
+    Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .layerBackdrop(cardBackdrop)
+                .background(backgroundColor)
+        )
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 20.dp, top = 16.dp, end = 20.dp, bottom = 120.dp)
+        ) {
         item {
             Text("设置", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
             Text(
@@ -79,26 +101,37 @@ fun SettingsScreen(
             )
         }
         item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            GlassCard(
+                backdrop = cardBackdrop,
+                quality = GlassQuality.High,
+                blurRadius = GlassTokens.StrongBlurRadius,
+                interactive = true,
                 shape = MaterialTheme.shapes.extraLarge
             ) {
-                SettingRow(Icons.Outlined.DarkMode, "主题", themeMode.label()) { dialog = SettingsDialog.THEME }
+                Column(Modifier.fillMaxWidth()) {
+                SettingRow(cardBackdrop, Icons.Outlined.DarkMode, "主题", themeMode.label()) { dialog = SettingsDialog.THEME }
                 HorizontalDivider(Modifier.padding(start = 64.dp))
-                SettingRow(Icons.Outlined.Straighten, "距离单位", unit.label()) { dialog = SettingsDialog.UNIT }
+                SettingRow(cardBackdrop, Icons.Outlined.Straighten, "距离单位", unit.label()) { dialog = SettingsDialog.UNIT }
                 HorizontalDivider(Modifier.padding(start = 64.dp))
                 SettingRow(
+                    cardBackdrop,
                     Icons.Outlined.Schedule,
                     "定位刷新率",
                     "$locationRefreshIntervalMillis ms"
                 ) { dialog = SettingsDialog.LOCATION_REFRESH }
+                }
             }
             Spacer(Modifier.height(16.dp))
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            GlassCard(
+                backdrop = cardBackdrop,
+                quality = GlassQuality.High,
+                blurRadius = GlassTokens.StrongBlurRadius,
+                interactive = true,
                 shape = MaterialTheme.shapes.extraLarge
             ) {
+                Column(Modifier.fillMaxWidth()) {
                 SettingRow(
+                    cardBackdrop,
                     Icons.Outlined.Explore,
                     "传感器校准",
                     if (sensorAvailable) "磁力计与陀螺仪可用" else "此设备没有方向传感器",
@@ -106,16 +139,20 @@ fun SettingsScreen(
                 ) { dialog = SettingsDialog.CALIBRATION }
                 HorizontalDivider(Modifier.padding(start = 64.dp))
                 SettingRow(
+                    cardBackdrop,
                     Icons.Outlined.Info,
                     "关于",
                     "Destination Compass ${BuildConfig.VERSION_NAME}"
                 ) { dialog = SettingsDialog.ABOUT }
+                }
             }
+        }
         }
     }
 
     when (dialog) {
         SettingsDialog.THEME -> ChoiceDialog(
+            backdrop = dialogBackdrop,
             title = "主题",
             choices = ThemeMode.entries,
             selected = themeMode,
@@ -124,6 +161,7 @@ fun SettingsScreen(
             onSelected = { onThemeChange(it); dialog = null }
         )
         SettingsDialog.UNIT -> ChoiceDialog(
+            backdrop = dialogBackdrop,
             title = "距离单位",
             choices = DistanceUnit.entries,
             selected = unit,
@@ -132,24 +170,27 @@ fun SettingsScreen(
             onSelected = { onUnitChange(it); dialog = null }
         )
         SettingsDialog.LOCATION_REFRESH -> RefreshIntervalDialog(
+            backdrop = dialogBackdrop,
             intervalMillis = locationRefreshIntervalMillis,
             onDismiss = { dialog = null },
             onConfirm = { onLocationRefreshIntervalChange(it); dialog = null }
         )
-        SettingsDialog.CALIBRATION -> AlertDialog(
+        SettingsDialog.CALIBRATION -> GlassAlertDialog(
+            backdrop = dialogBackdrop,
             onDismissRequest = { dialog = null },
             icon = { Icon(Icons.Outlined.Explore, null) },
             title = { Text("校准传感器") },
             text = { Text("远离磁铁或金属物体，手持手机在空中缓慢画 8 字 3–5 次。完成后转动手机，确认罗盘刻度连续平滑移动。") },
             confirmButton = {
-                TextButton(onClick = {
+                GlassButton(backdrop = dialogBackdrop, onClick = {
                     context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
                     dialog = null
                 }) { Text("检查定位设置") }
             },
-            dismissButton = { TextButton(onClick = { dialog = null }) { Text("完成") } }
+            dismissButton = { GlassButton(backdrop = dialogBackdrop, onClick = { dialog = null }) { Text("完成") } }
         )
-        SettingsDialog.ABOUT -> AlertDialog(
+        SettingsDialog.ABOUT -> GlassAlertDialog(
+            backdrop = dialogBackdrop,
             onDismissRequest = { dialog = null },
             icon = { Icon(Icons.Outlined.Explore, null) },
             title = { Text("Destination Compass") },
@@ -159,10 +200,11 @@ fun SettingsScreen(
                         "地图：百度地图 Android SDK\n" +
                         "定位：百度定位 Android SDK\n" +
                         "界面：Jetpack Compose + Material 3\n\n" +
+                        "Liquid Glass：感谢 Kyant0/AndroidLiquidGlass 开源项目\n\n" +
                         "made by liu21"
                 )
             },
-            confirmButton = { TextButton(onClick = { dialog = null }) { Text("知道了") } }
+            confirmButton = { GlassButton(backdrop = dialogBackdrop, onClick = { dialog = null }) { Text("知道了") } }
         )
         null -> Unit
     }
@@ -170,6 +212,7 @@ fun SettingsScreen(
 
 @Composable
 private fun SettingRow(
+    backdrop: LayerBackdrop,
     icon: ImageVector,
     title: String,
     summary: String,
@@ -180,20 +223,34 @@ private fun SettingRow(
         headlineContent = { Text(title, fontWeight = FontWeight.Medium) },
         supportingContent = { Text(summary) },
         leadingContent = {
-            Icon(
-                icon,
-                null,
-                tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-            )
+            GlassSurface(
+                backdrop = backdrop,
+                shape = MaterialTheme.shapes.large,
+                quality = if (enabled) GlassQuality.High else GlassQuality.Reduced,
+                surfaceColor = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 0.18f else 0.08f)
+            ) {
+                Icon(
+                    icon,
+                    null,
+                    modifier = Modifier.padding(9.dp),
+                    tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                )
+            }
         },
         trailingContent = { Icon(Icons.Filled.ChevronRight, null) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = Modifier.clickable(enabled = enabled, onClick = onClick)
+        modifier = Modifier.clickable(
+            interactionSource = null,
+            indication = null,
+            enabled = enabled,
+            onClick = onClick
+        )
     )
 }
 
 @Composable
 private fun <T> ChoiceDialog(
+    backdrop: Backdrop,
     title: String,
     choices: List<T>,
     selected: T,
@@ -201,38 +258,51 @@ private fun <T> ChoiceDialog(
     onDismiss: () -> Unit,
     onSelected: (T) -> Unit
 ) {
-    AlertDialog(
+    GlassAlertDialog(
+        backdrop = backdrop,
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 choices.forEach { value ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelected(value) }
-                            .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    val isSelected = selected == value
+                    GlassButton(
+                        onClick = { onSelected(value) },
+                        backdrop = backdrop,
+                        modifier = Modifier.fillMaxWidth(),
+                        quality = GlassQuality.High,
+                        surfaceColor = if (isSelected) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
+                        } else {
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.12f)
+                        },
+                        contentColor = if (isSelected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
                     ) {
-                        Text(label(value), Modifier.padding(start = 4.dp))
-                        RadioButton(selected = selected == value, onClick = { onSelected(value) })
+                        Text(label(value), fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal)
+                        if (isSelected) Icon(Icons.Filled.Check, null)
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+        confirmButton = { GlassButton(backdrop = backdrop, onClick = onDismiss) { Text("取消") } }
     )
 }
 
 @Composable
 private fun RefreshIntervalDialog(
+    backdrop: Backdrop,
     intervalMillis: Long,
     onDismiss: () -> Unit,
     onConfirm: (Long) -> Unit
 ) {
     var sliderValue by remember(intervalMillis) { mutableFloatStateOf(intervalMillis.toFloat()) }
     val normalized = LocationRefreshInterval.normalize(sliderValue.roundToInt().toLong())
-    AlertDialog(
+    GlassAlertDialog(
+        backdrop = backdrop,
         onDismissRequest = onDismiss,
         title = { Text("定位刷新率") },
         text = {
@@ -242,12 +312,13 @@ private fun RefreshIntervalDialog(
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.primary
                 )
-                Slider(
+                GlassSlider(
                     value = normalized.toFloat(),
                     onValueChange = {
                         sliderValue = LocationRefreshInterval.normalize(it.roundToInt().toLong()).toFloat()
                     },
                     valueRange = LocationRefreshInterval.MIN_MILLIS.toFloat()..LocationRefreshInterval.MAX_MILLIS.toFloat(),
+                    backdrop = backdrop,
                     steps = ((LocationRefreshInterval.MAX_MILLIS - LocationRefreshInterval.MIN_MILLIS) /
                         LocationRefreshInterval.STEP_MILLIS).toInt() - 1,
                     modifier = Modifier.padding(top = 12.dp)
@@ -264,8 +335,8 @@ private fun RefreshIntervalDialog(
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(normalized) }) { Text("应用") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+        confirmButton = { GlassButton(backdrop = backdrop, onClick = { onConfirm(normalized) }) { Text("应用") } },
+        dismissButton = { GlassButton(backdrop = backdrop, onClick = onDismiss) { Text("取消") } }
     )
 }
 

@@ -7,16 +7,12 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Paint
 import android.graphics.Point
-import android.graphics.drawable.GradientDrawable
 import android.os.SystemClock
 import android.provider.Settings
-import android.view.ViewGroup
-import android.view.ViewOutlineProvider
 import android.view.animation.DecelerateInterpolator
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,12 +45,8 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.BottomSheetScaffold
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
@@ -63,11 +55,8 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetValue
-import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.material3.rememberStandardBottomSheetState
@@ -82,16 +71,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -123,8 +107,19 @@ import com.destinationcompass.app.data.location.MotionState
 import com.destinationcompass.app.data.location.GPS_WEAK_SIGNAL_THRESHOLD_METERS
 import com.destinationcompass.app.domain.BearingCalculator
 import com.destinationcompass.app.model.Destination
-import eightbitlab.com.blurview.BlurTarget
-import eightbitlab.com.blurview.BlurView
+import com.destinationcompass.app.ui.liquidglass.GlassBottomSheet
+import com.destinationcompass.app.ui.liquidglass.GlassButton
+import com.destinationcompass.app.ui.liquidglass.GlassCard
+import com.destinationcompass.app.ui.liquidglass.GlassFloatingActionButton
+import com.destinationcompass.app.ui.liquidglass.GlassQuality
+import com.destinationcompass.app.ui.liquidglass.GlassSurface
+import com.destinationcompass.app.ui.liquidglass.GlassToggle
+import com.destinationcompass.app.ui.liquidglass.WindowAlignedLayerBackdrop
+import com.kyant.backdrop.Backdrop
+import com.destinationcompass.app.ui.liquidglass.GlassTokens
+import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import java.util.Locale
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -132,6 +127,8 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapPickerScreen(
+    backdrop: LayerBackdrop,
+    detailSheetBackdrop: WindowAlignedLayerBackdrop,
     initialDestination: Destination?,
     hasLocationPermission: Boolean,
     hasPreciseLocation: Boolean,
@@ -158,26 +155,10 @@ fun MapPickerScreen(
     val context = LocalContext.current
     BaiduMapSdkInitializer.ensureInitialized(context)
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val surfaceColor = MaterialTheme.colorScheme.surface
-    val surfaceContainerHighColor = MaterialTheme.colorScheme.surfaceContainerHigh
-    val darkSurface = surfaceColor.luminance() < 0.5f
-    val glassHighlightColor = Color.White.copy(alpha = if (darkSurface) 0.16f else 0.62f)
-    val searchShape = RoundedCornerShape(20.dp)
-    val blurOverlayColor = surfaceContainerHighColor.copy(alpha = if (darkSurface) 0.34f else 0.46f)
+    val searchShape = remember { RoundedCornerShape(20.dp) }
     val destinationLineColor = Color(0xFF0B57D0).toArgb()
     val plannedRouteColor = MaterialTheme.colorScheme.primary.toArgb()
     val mapView = remember { TextureMapView(context) }
-    val mapBlurTarget = remember(mapView) {
-        BlurTarget(context).apply {
-            addView(
-                mapView,
-                ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-            )
-        }
-    }
     val mapService = remember { MapService() }
     val routePlanningService = remember { RoutePlanningService() }
     val markerAnimator = remember { MapMarkerAnimator() }
@@ -204,6 +185,7 @@ fun MapPickerScreen(
     }
     var routeLoading by remember { mutableStateOf(false) }
     var routeRequestRevision by remember { mutableIntStateOf(0) }
+    var startNavigationAfterPlanning by remember { mutableStateOf(false) }
     var lastNavigationRouteOrigin by remember { mutableStateOf<LatLng?>(null) }
     var lastNavigationRouteRequestMillis by remember { mutableStateOf(0L) }
     var selectionRevision by remember { mutableIntStateOf(0) }
@@ -234,6 +216,7 @@ fun MapPickerScreen(
         routeRequestRevision += 1
         routePlanningService.cancel()
         routeLoading = false
+        startNavigationAfterPlanning = false
         plannedRouteLine?.remove()
         plannedRouteLine = null
         plannedRoute = null
@@ -345,10 +328,19 @@ fun MapPickerScreen(
             result.onSuccess { route ->
                 renderPlannedRoute(route, fitRoute = !navigationUpdate)
                 onRoutePlanned(destination, route)
+                if (startNavigationAfterPlanning) {
+                    startNavigationAfterPlanning = false
+                    lastNavigationRouteOrigin = null
+                    lastNavigationRouteRequestMillis = 0L
+                    onNavigationActiveChange(true)
+                }
                 if (!navigationUpdate) {
                     scope.launch { bottomSheetState.partialExpand() }
                 }
-            }.onFailure { error = it.message ?: "路线规划失败" }
+            }.onFailure {
+                startNavigationAfterPlanning = false
+                error = it.message ?: "路线规划失败"
+            }
         }
     }
 
@@ -366,9 +358,13 @@ fun MapPickerScreen(
                 error = "正在获取有效当前位置，暂时无法启动实时导航"
                 scope.launch { bottomSheetState.expand() }
             }
-            plannedRoute == null -> {
-                error = "请先规划路线"
+            selected == null -> {
+                error = "请先选择目标地点"
                 scope.launch { bottomSheetState.expand() }
+            }
+            plannedRoute == null -> {
+                startNavigationAfterPlanning = true
+                performRoutePlanning()
             }
             else -> {
                 error = null
@@ -624,21 +620,22 @@ fun MapPickerScreen(
 
     BottomSheetScaffold(
         scaffoldState = scaffoldState,
-        sheetPeekHeight = 40.dp,
-        sheetShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        // The scaffold deliberately fills the map so the floating navigation bar
+        // can refract it. Include the bar's footprint in the peek anchor instead
+        // of letting the sheet handle and details open underneath the bar.
+        sheetPeekHeight = 40.dp + GlassTokens.NavigationContentClearance,
+        sheetShape = GlassTokens.BottomSheetShape,
         sheetContainerColor = Color.Transparent,
         sheetContentColor = MaterialTheme.colorScheme.onSurface,
         sheetTonalElevation = 0.dp,
-        sheetShadowElevation = 12.dp,
+        sheetShadowElevation = 0.dp,
         sheetDragHandle = null,
         sheetContent = {
-            Box(Modifier.fillMaxWidth()) {
-                FrostedMapLayer(
-                    blurTarget = mapBlurTarget,
-                    overlayColor = blurOverlayColor,
-                    cornerRadius = 24.dp,
-                    modifier = Modifier.matchParentSize()
-                )
+            GlassBottomSheet(
+                backdrop = backdrop,
+                modifier = detailSheetBackdrop.sourceModifier,
+                exportedBackdrop = detailSheetBackdrop.layerBackdrop
+            ) { sheetContentBackdrop ->
                 Column(Modifier.fillMaxWidth()) {
                     Box(Modifier.fillMaxWidth().height(40.dp)) {
                         BottomSheetDefaults.DragHandle(Modifier.align(Alignment.Center))
@@ -647,7 +644,11 @@ fun MapPickerScreen(
                         Modifier
                             .fillMaxWidth()
                             .verticalScroll(rememberScrollState())
-                            .padding(start = 24.dp, end = 24.dp, bottom = 24.dp)
+                            .padding(
+                                start = 24.dp,
+                                end = 24.dp,
+                                bottom = 24.dp + GlassTokens.NavigationContentClearance
+                            )
                     ) {
                         val displayedDestination = selected
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -680,112 +681,121 @@ fun MapPickerScreen(
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold
                             )
-                            Row(
-                                Modifier.fillMaxWidth().padding(top = 6.dp),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                RouteChoiceChip(
-                                    text = "步行",
-                                    selected = routeTravelMode == RouteTravelMode.WALKING,
-                                    onClick = {
-                                        if (routeTravelMode != RouteTravelMode.WALKING) {
-                                            routeTravelMode = RouteTravelMode.WALKING
-                                            clearPlannedRoute()
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                )
-                                RouteChoiceChip(
-                                    text = "骑行",
-                                    selected = routeTravelMode == RouteTravelMode.CYCLING,
-                                    onClick = {
-                                        if (routeTravelMode != RouteTravelMode.CYCLING) {
-                                            routeTravelMode = RouteTravelMode.CYCLING
-                                            clearPlannedRoute()
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                RouteChoiceChip(
-                                    text = "距离最短",
-                                    selected = routePreference == RoutePreference.SHORTEST,
-                                    onClick = {
-                                        if (routePreference != RoutePreference.SHORTEST) {
-                                            routePreference = RoutePreference.SHORTEST
-                                            clearPlannedRoute()
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                )
-                                RouteChoiceChip(
-                                    text = "时间最快",
-                                    selected = routePreference == RoutePreference.FASTEST,
-                                    onClick = {
-                                        if (routePreference != RoutePreference.FASTEST) {
-                                            routePreference = RoutePreference.FASTEST
-                                            clearPlannedRoute()
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                )
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    RouteChoiceChip(
+                                        text = "步行",
+                                        selected = routeTravelMode == RouteTravelMode.WALKING,
+                                        backdrop = sheetContentBackdrop,
+                                        onClick = {
+                                            if (routeTravelMode != RouteTravelMode.WALKING) {
+                                                routeTravelMode = RouteTravelMode.WALKING
+                                                clearPlannedRoute()
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    RouteChoiceChip(
+                                        text = "骑行",
+                                        selected = routeTravelMode == RouteTravelMode.CYCLING,
+                                        backdrop = sheetContentBackdrop,
+                                        onClick = {
+                                            if (routeTravelMode != RouteTravelMode.CYCLING) {
+                                                routeTravelMode = RouteTravelMode.CYCLING
+                                                clearPlannedRoute()
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    RouteChoiceChip(
+                                        text = "距离最短",
+                                        selected = routePreference == RoutePreference.SHORTEST,
+                                        backdrop = sheetContentBackdrop,
+                                        onClick = {
+                                            if (routePreference != RoutePreference.SHORTEST) {
+                                                routePreference = RoutePreference.SHORTEST
+                                                clearPlannedRoute()
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    RouteChoiceChip(
+                                        text = "时间最快",
+                                        selected = routePreference == RoutePreference.FASTEST,
+                                        backdrop = sheetContentBackdrop,
+                                        onClick = {
+                                            if (routePreference != RoutePreference.FASTEST) {
+                                                routePreference = RoutePreference.FASTEST
+                                                clearPlannedRoute()
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
                             }
                             plannedRoute?.let { route ->
-                                Surface(
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                                GlassSurface(
+                                    backdrop = sheetContentBackdrop,
+                                    shape = RoundedCornerShape(18.dp),
+                                    quality = GlassQuality.High,
+                                    blurRadius = GlassTokens.StrongBlurRadius,
+                                    surfaceColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.24f),
+                                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
                                 ) {
                                     Text(
                                         "${route.travelMode.displayName} · ${formatRouteDistance(route.distanceMeters)} · " +
                                             "${formatRouteDuration(route.durationSeconds)} · ${route.preference.displayName}",
-                                        Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                                        Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                }
-                                Row(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(Modifier.weight(1f)) {
-                                        Text("实时导航", style = MaterialTheme.typography.titleSmall)
-                                        Text(
-                                            "移动时自动重新规划路线",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Switch(
-                                        checked = navigationActive,
-                                        onCheckedChange = ::setRealtimeNavigation
+                                        color = MaterialTheme.colorScheme.primary
                                     )
                                 }
                             }
-                            Button(
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("实时导航", style = MaterialTheme.typography.titleSmall)
+                                    Text(
+                                        if (plannedRoute == null) "开启后自动规划路线" else "移动时自动重新规划路线",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                GlassToggle(
+                                    checked = navigationActive,
+                                    enabled = !routeLoading,
+                                    onCheckedChange = ::setRealtimeNavigation,
+                                    backdrop = sheetContentBackdrop
+                                )
+                            }
+                            GlassButton(
                                 onClick = { performRoutePlanning() },
+                                backdrop = sheetContentBackdrop,
                                 enabled = !routeLoading,
+                                loading = routeLoading,
                                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(50.dp)
                             ) {
-                                if (routeLoading) {
-                                    CircularProgressIndicator(
-                                        Modifier.width(20.dp),
-                                        strokeWidth = 2.dp,
-                                        color = MaterialTheme.colorScheme.onPrimary
-                                    )
-                                    Spacer(Modifier.width(10.dp))
-                                }
                                 Text(if (routeLoading) "正在规划…" else "规划${routeTravelMode.displayName}路线")
                             }
                             error?.let { Text(it, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-                            OutlinedButton(
+                            GlassButton(
                                 onClick = { onFavoriteToggle(displayedDestination, selectedIsFavorite) },
+                                backdrop = sheetContentBackdrop,
                                 modifier = Modifier.fillMaxWidth().padding(top = 14.dp).height(50.dp)
                             ) {
                                 Icon(
@@ -795,7 +805,11 @@ fun MapPickerScreen(
                                 Spacer(Modifier.width(8.dp))
                                 Text(if (selectedIsFavorite) "取消收藏" else "收藏地点")
                             }
-                            Button(onClick = { onConfirm(displayedDestination) }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp).height(52.dp)) {
+                            GlassButton(
+                                onClick = { onConfirm(displayedDestination) },
+                                backdrop = sheetContentBackdrop,
+                                modifier = Modifier.fillMaxWidth().padding(top = 10.dp).height(52.dp)
+                            ) {
                                 Text("确认目标")
                             }
                         }
@@ -804,28 +818,23 @@ fun MapPickerScreen(
             }
         }
     ) { _ ->
-        // Keep the map rendered behind the complete sheet. If the scaffold's peek-height
-        // padding is applied here, the bottom strip has no map pixels for BlurView to sample.
+        // Only the map is exported to the page backdrop. Glass overlays are siblings, so
+        // no node records and samples the same LayerBackdrop during one draw pass.
         Box(Modifier.fillMaxSize()) {
             AndroidView(
-                factory = { mapBlurTarget },
-                modifier = Modifier.fillMaxSize()
+                factory = { mapView },
+                modifier = Modifier.fillMaxSize().layerBackdrop(backdrop)
             )
-            Box(
+            GlassSurface(
+                backdrop = backdrop,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .padding(start = 16.dp, top = 16.dp, end = 16.dp)
-                    .shadow(6.dp, searchShape)
-                    .clip(searchShape)
-                    .border(1.dp, glassHighlightColor, searchShape)
+                    .padding(start = 16.dp, top = 16.dp, end = 16.dp),
+                shape = searchShape,
+                blurRadius = GlassTokens.StrongBlurRadius,
+                quality = GlassQuality.High
             ) {
-                FrostedMapLayer(
-                    blurTarget = mapBlurTarget,
-                    overlayColor = blurOverlayColor,
-                    cornerRadius = 20.dp,
-                    modifier = Modifier.matchParentSize()
-                )
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it; error = null },
@@ -862,12 +871,18 @@ fun MapPickerScreen(
                 visible = !isOnline,
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 84.dp)
             ) {
-                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.errorContainer) {
+                GlassSurface(
+                    backdrop = backdrop,
+                    shape = RoundedCornerShape(16.dp),
+                    quality = GlassQuality.High,
+                    blurRadius = GlassTokens.StrongBlurRadius,
+                    surfaceColor = MaterialTheme.colorScheme.error.copy(alpha = 0.18f)
+                ) {
                     Text(
                         "当前离线，地图搜索暂不可用",
                         Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
                         style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onErrorContainer
+                        color = MaterialTheme.colorScheme.error
                     )
                 }
             }
@@ -880,13 +895,15 @@ fun MapPickerScreen(
             ) {
                 DestinationProximityNotice(
                     proximity = destinationProximity,
-                    distanceMeters = destinationDistanceMeters
+                    distanceMeters = destinationDistanceMeters,
+                    backdrop = backdrop
                 )
             }
             if (searchResults.isNotEmpty()) {
-                Card(
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                GlassCard(
+                    backdrop = backdrop,
+                    shape = remember { RoundedCornerShape(18.dp) },
+                    quality = GlassQuality.Balanced,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .fillMaxWidth()
@@ -920,75 +937,110 @@ fun MapPickerScreen(
                 }
             }
             AnimatedVisibility(
-                visible = plannedRoute != null && searchResults.isEmpty(),
+                visible = selected != null && searchResults.isEmpty(),
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .padding(start = 16.dp, end = 96.dp, bottom = 56.dp)
+                    .padding(start = 16.dp, end = 96.dp, bottom = 140.dp)
             ) {
                 val route = plannedRoute
-                if (route != null) {
-                    Surface(
-                        shape = RoundedCornerShape(18.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        shadowElevation = 6.dp
+                val routeCardBackdrop = rememberLayerBackdrop()
+                val routeCardShape = remember { RoundedCornerShape(18.dp) }
+                GlassCard(
+                    backdrop = backdrop,
+                    exportedBackdrop = routeCardBackdrop,
+                    modifier = Modifier
+                        .fillMaxWidth(),
+                    shape = routeCardShape,
+                    quality = GlassQuality.High
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    if (navigationActive) "路线导航中" else "路线已规划",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Text(
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                when {
+                                    navigationActive -> "路线导航中"
+                                    route != null -> "路线已规划"
+                                    else -> "尚未规划路线"
+                                },
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                if (route != null) {
                                     "${route.travelMode.displayName} · ${formatRouteDistance(route.distanceMeters)} · " +
-                                        formatRouteDuration(route.durationSeconds),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1
-                                )
-                            }
-                            Button(
-                                onClick = { setRealtimeNavigation(!navigationActive) },
-                                modifier = Modifier.height(42.dp)
-                            ) {
-                                Text(if (navigationActive) "结束导航" else "实时导航")
-                            }
+                                        formatRouteDuration(route.durationSeconds)
+                                } else {
+                                    "点击实时导航自动规划路线"
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1
+                            )
+                        }
+                        GlassButton(
+                            onClick = { setRealtimeNavigation(!navigationActive) },
+                            backdrop = routeCardBackdrop,
+                            enabled = !routeLoading,
+                            loading = routeLoading,
+                            surfaceColor = if (navigationActive) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)
+                            } else {
+                                Color.Unspecified
+                            },
+                            contentColor = if (navigationActive) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            },
+                            modifier = Modifier.height(42.dp)
+                        ) {
+                            Text(
+                                when {
+                                    routeLoading -> "规划中…"
+                                    navigationActive -> "结束导航"
+                                    else -> "实时导航"
+                                }
+                            )
                         }
                     }
                 }
             }
             Column(
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 56.dp),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 140.dp),
                 horizontalAlignment = Alignment.End
             ) {
                 if (locationState.hasFix) {
                     val accuracy = locationState.accuracyMeters ?: Float.MAX_VALUE
-                    Surface(
+                    val accurate = accuracy <= GPS_WEAK_SIGNAL_THRESHOLD_METERS && hasPreciseLocation
+                    GlassSurface(
+                        backdrop = backdrop,
                         shape = RoundedCornerShape(12.dp),
-                        color = if (accuracy <= GPS_WEAK_SIGNAL_THRESHOLD_METERS && hasPreciseLocation) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.errorContainer
+                        quality = GlassQuality.High,
+                        surfaceColor = if (accurate) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                        } else {
+                            MaterialTheme.colorScheme.error.copy(alpha = 0.16f)
+                        }
                     ) {
                         Text(
                             if (hasPreciseLocation) "定位精度 ±${accuracy.roundToInt()} m" else "当前为模糊定位",
                             Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                             style = MaterialTheme.typography.labelMedium,
-                            color = if (accuracy <= GPS_WEAK_SIGNAL_THRESHOLD_METERS && hasPreciseLocation) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onErrorContainer
+                            color = if (accurate) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                         )
                     }
                     Spacer(Modifier.height(8.dp))
                 }
-                FrostedMapFab(
-                    blurTarget = mapBlurTarget,
-                    overlayColor = blurOverlayColor,
-                    highlightColor = glassHighlightColor,
+                GlassFloatingActionButton(
+                    backdrop = backdrop,
                     onClick = {
                         if (!followMyLocation) onFollowMyLocationChange(true)
                         onHeadingUpChange(!headingUp)
                     },
-                    containerColor = if (headingUp) {
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.40f)
+                    surfaceColor = if (headingUp) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)
                     } else {
                         Color.Transparent
                     },
@@ -1000,10 +1052,8 @@ fun MapPickerScreen(
                     )
                 }
                 Spacer(Modifier.height(8.dp))
-                FrostedMapFab(
-                    blurTarget = mapBlurTarget,
-                    overlayColor = blurOverlayColor,
-                    highlightColor = glassHighlightColor,
+                GlassFloatingActionButton(
+                    backdrop = backdrop,
                     onClick = {
                         when {
                             !hasLocationPermission || !hasPreciseLocation -> {
@@ -1033,8 +1083,8 @@ fun MapPickerScreen(
                             else -> error = "正在获取当前位置，请确认系统定位已开启"
                         }
                     },
-                    containerColor = if (followMyLocation) {
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.40f)
+                    surfaceColor = if (followMyLocation) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)
                     } else {
                         Color.Transparent
                     },
@@ -1048,73 +1098,6 @@ fun MapPickerScreen(
             }
         }
     }
-}
-
-@Composable
-private fun FrostedMapFab(
-    blurTarget: BlurTarget,
-    overlayColor: Color,
-    highlightColor: Color,
-    onClick: () -> Unit,
-    containerColor: Color,
-    contentColor: Color,
-    content: @Composable () -> Unit
-) {
-    val shape = RoundedCornerShape(16.dp)
-    Box(
-        modifier = Modifier
-            .shadow(6.dp, shape)
-            .clip(shape)
-            .border(1.dp, highlightColor, shape)
-    ) {
-        FrostedMapLayer(
-            blurTarget = blurTarget,
-            overlayColor = overlayColor,
-            cornerRadius = 16.dp,
-            modifier = Modifier.matchParentSize()
-        )
-        SmallFloatingActionButton(
-            onClick = onClick,
-            shape = shape,
-            containerColor = containerColor,
-            contentColor = contentColor,
-            content = content
-        )
-    }
-}
-
-@Composable
-private fun FrostedMapLayer(
-    blurTarget: BlurTarget,
-    overlayColor: Color,
-    cornerRadius: Dp,
-    modifier: Modifier = Modifier
-) {
-    val density = LocalDensity.current
-    val cornerRadiusPx = with(density) { cornerRadius.toPx() }
-    AndroidView(
-        factory = { context ->
-            BlurView(context).apply {
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    this.cornerRadius = cornerRadiusPx
-                    setColor(android.graphics.Color.TRANSPARENT)
-                }
-                outlineProvider = ViewOutlineProvider.BACKGROUND
-                clipToOutline = true
-                setupWith(blurTarget)
-                    .setBlurRadius(20f)
-                    .setOverlayColor(overlayColor.toArgb())
-                    .setBlurAutoUpdate(true)
-            }
-        },
-        update = { blurView ->
-            (blurView.background as? GradientDrawable)?.cornerRadius = cornerRadiusPx
-            blurView.setBlurRadius(20f)
-            blurView.setOverlayColor(overlayColor.toArgb())
-        },
-        modifier = modifier
-    )
 }
 
 internal enum class DestinationProximity { FAR, NEAR, ARRIVED }
@@ -1134,43 +1117,50 @@ internal fun shouldUseMovementHeading(locationState: LocationState): Boolean =
 @Composable
 internal fun DestinationProximityNotice(
     proximity: DestinationProximity,
-    distanceMeters: Double?
+    distanceMeters: Double?,
+    backdrop: Backdrop
 ) {
     val arrived = proximity == DestinationProximity.ARRIVED
-    Surface(
+    GlassCard(
+        backdrop = backdrop,
         shape = RoundedCornerShape(16.dp),
-        color = if (arrived) {
-            MaterialTheme.colorScheme.tertiaryContainer
+        quality = GlassQuality.High,
+        blurRadius = GlassTokens.StrongBlurRadius,
+        surfaceColor = if (arrived) {
+            MaterialTheme.colorScheme.tertiary.copy(alpha = 0.22f)
         } else {
-            MaterialTheme.colorScheme.secondaryContainer
+            MaterialTheme.colorScheme.secondary.copy(alpha = 0.20f)
         },
-        contentColor = if (arrived) {
+        interactive = true,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        val contentColor = if (arrived) {
             MaterialTheme.colorScheme.onTertiaryContainer
         } else {
             MaterialTheme.colorScheme.onSecondaryContainer
-        },
-        shadowElevation = 3.dp,
-        modifier = Modifier.fillMaxWidth()
-    ) {
+        }
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
             Icon(
                 if (arrived) Icons.Filled.Flag else Icons.Filled.NearMe,
-                contentDescription = null
+                contentDescription = null,
+                tint = contentColor
             )
             Spacer(Modifier.width(12.dp))
             Column {
                 Text(
                     if (arrived) "目的地已到达" else "接近目的地",
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
+                    color = contentColor
                 )
                 distanceMeters?.let {
                     Text(
                         if (arrived) "已进入目的地 10 米范围" else "距离约 ${it.roundToInt()} 米",
-                        style = MaterialTheme.typography.bodySmall
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentColor
                     )
                 }
             }
@@ -1299,15 +1289,29 @@ private fun createDestinationMarker(context: Context): BitmapDescriptor {
 private fun RouteChoiceChip(
     text: String,
     selected: Boolean,
+    backdrop: Backdrop,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    FilterChip(
-        selected = selected,
+    GlassButton(
         onClick = onClick,
-        label = { Text(text) },
-        modifier = modifier
-    )
+        backdrop = backdrop,
+        surfaceColor = if (selected) {
+            // Use the saturated accent rather than the pale container color so
+            // the selected route option remains obvious over a busy map backdrop.
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.32f)
+        } else {
+            Color.Transparent
+        },
+        contentColor = if (selected) {
+            MaterialTheme.colorScheme.onSurface
+        } else {
+            MaterialTheme.colorScheme.primary
+        },
+        modifier = modifier.height(42.dp)
+    ) {
+        Text(text)
+    }
 }
 
 private fun formatRouteDistance(distanceMeters: Int): String = if (distanceMeters < 1_000) {

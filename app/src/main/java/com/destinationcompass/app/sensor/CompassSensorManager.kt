@@ -210,8 +210,8 @@ class CompassSensorManager(context: Context) : SensorEventListener {
 
     private companion object {
         const val TAG = "CompassDebug"
-        const val SENSOR_SAMPLING_PERIOD_US = 20_000
-        const val UI_PUBLISH_INTERVAL_NANOS = 33_000_000L
+        const val SENSOR_SAMPLING_PERIOD_US = 10_000
+        const val UI_PUBLISH_INTERVAL_NANOS = 16_500_000L
         const val DEBUG_LOG_INTERVAL_MILLIS = 500L
     }
 }

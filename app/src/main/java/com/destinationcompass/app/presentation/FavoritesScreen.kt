@@ -10,7 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,14 +32,8 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.outlined.BookmarkBorder
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -57,10 +51,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.destinationcompass.app.model.Destination
 import com.destinationcompass.app.model.DestinationIcon
+import com.destinationcompass.app.ui.liquidglass.GlassAlertDialog
+import com.destinationcompass.app.ui.liquidglass.GlassButton
+import com.destinationcompass.app.ui.liquidglass.GlassCard
+import com.destinationcompass.app.ui.liquidglass.GlassFloatingActionButton
+import com.destinationcompass.app.ui.liquidglass.GlassIconButton
+import com.destinationcompass.app.ui.liquidglass.GlassQuality
+import com.destinationcompass.app.ui.liquidglass.GlassSurface
+import com.destinationcompass.app.ui.liquidglass.GlassTokens
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import java.util.Locale
 
 @Composable
 fun FavoritesScreen(
+    backdrop: LayerBackdrop,
+    dialogBackdrop: Backdrop,
     favorites: List<Destination>,
     currentDestination: Destination?,
     onUse: (Destination) -> Unit,
@@ -70,47 +78,62 @@ fun FavoritesScreen(
 ) {
     var editing by remember { mutableStateOf<Destination?>(null) }
     var expandedId by remember { mutableStateOf<String?>(null) }
+    val backgroundColor = MaterialTheme.colorScheme.background
+    val cardBackdrop = rememberLayerBackdrop {
+        drawRect(backgroundColor)
+        drawContent()
+    }
 
     androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
-        if (favorites.isEmpty()) {
-            Column(Modifier.align(Alignment.Center).padding(36.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Outlined.BookmarkBorder, null, tint = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.height(12.dp))
-                Text("还没有收藏地点", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text("保存常用目的地，下次可以立即开始导航", Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        } else {
-            LazyColumn(
-                Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp, 16.dp, 20.dp, 96.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                item {
-                    Text("收藏", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-                    Text("轻触卡片查看详情", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp, bottom = 8.dp))
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+            androidx.compose.foundation.layout.Box(
+                Modifier
+                    .fillMaxSize()
+                    .layerBackdrop(cardBackdrop)
+                    .background(backgroundColor)
+            )
+            if (favorites.isEmpty()) {
+                Column(Modifier.align(Alignment.Center).padding(36.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Outlined.BookmarkBorder, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.height(12.dp))
+                    Text("还没有收藏地点", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("保存常用目的地，下次可以立即开始导航", Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                items(favorites, key = { it.id }) { favorite ->
-                    FavoriteContainerTransformCard(
-                        favorite = favorite,
-                        expanded = expandedId == favorite.id,
-                        onToggle = { expandedId = if (expandedId == favorite.id) null else favorite.id },
-                        onUse = { onUse(favorite) },
-                        onEdit = { editing = favorite },
-                        onDelete = { onDelete(favorite.id) }
-                    )
+            } else {
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp, 16.dp, 20.dp, 96.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    item {
+                        Text("收藏", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+                        Text("轻触卡片查看详情", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp, bottom = 8.dp))
+                    }
+                    items(favorites, key = { it.id }) { favorite ->
+                        FavoriteContainerTransformCard(
+                            backdrop = cardBackdrop,
+                            favorite = favorite,
+                            expanded = expandedId == favorite.id,
+                            onToggle = { expandedId = if (expandedId == favorite.id) null else favorite.id },
+                            onUse = { onUse(favorite) },
+                            onEdit = { editing = favorite },
+                            onDelete = { onDelete(favorite.id) }
+                        )
+                    }
                 }
             }
         }
 
-        FloatingActionButton(
+        GlassFloatingActionButton(
             onClick = { currentDestination?.let(onAdd) },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
-            containerColor = MaterialTheme.colorScheme.primaryContainer
+            backdrop = backdrop,
+            enabled = currentDestination != null,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 104.dp)
         ) { Icon(Icons.Filled.Add, "收藏当前目标") }
     }
 
     editing?.let { favorite ->
-        EditFavoriteDialog(favorite, onDismiss = { editing = null }) {
+        EditFavoriteDialog(favorite, dialogBackdrop, onDismiss = { editing = null }) {
             onUpdate(it)
             editing = null
         }
@@ -119,6 +142,7 @@ fun FavoritesScreen(
 
 @Composable
 private fun FavoriteContainerTransformCard(
+    backdrop: LayerBackdrop,
     favorite: Destination,
     expanded: Boolean,
     onToggle: () -> Unit,
@@ -132,22 +156,37 @@ private fun FavoriteContainerTransformCard(
         label = "container corner transform"
     )
     val containerColor by animateColorAsState(
-        targetValue = if (expanded) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        targetValue = if (expanded) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+        } else {
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.14f)
+        },
         animationSpec = spring(dampingRatio = .9f, stiffness = Spring.StiffnessMediumLow),
         label = "container color transform"
     )
-    Card(
+    GlassCard(
+        backdrop = backdrop,
         shape = RoundedCornerShape(corner),
-        colors = CardDefaults.cardColors(containerColor = containerColor),
+        quality = GlassQuality.High,
+        blurRadius = GlassTokens.StrongBlurRadius,
+        surfaceColor = containerColor,
+        interactive = true,
+        onClick = onToggle,
         modifier = Modifier.fillMaxWidth().animateContentSize(
             animationSpec = spring(dampingRatio = .86f, stiffness = Spring.StiffnessMediumLow)
-        ).clickable(onClick = onToggle)
+        )
     ) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.material3.Surface(
+                GlassSurface(
+                    backdrop = backdrop,
                     shape = MaterialTheme.shapes.large,
-                    color = if (expanded) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.primaryContainer
+                    quality = GlassQuality.High,
+                    surfaceColor = if (expanded) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                    } else {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.20f)
+                    }
                 ) {
                     Icon(favorite.icon.imageVector(), null, Modifier.padding(11.dp), tint = MaterialTheme.colorScheme.primary)
                 }
@@ -168,15 +207,19 @@ private fun FavoriteContainerTransformCard(
                         String.format(Locale.US, "%.4f, %.4f", favorite.latitude, favorite.longitude),
                         Modifier.padding(top = 16.dp),
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, "删除") }
-                        IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "编辑") }
+                        GlassIconButton(onClick = onDelete, backdrop = backdrop, modifier = Modifier.padding(horizontal = 2.dp)) { Icon(Icons.Filled.Delete, "删除") }
+                        GlassIconButton(onClick = onEdit, backdrop = backdrop, modifier = Modifier.padding(horizontal = 2.dp)) { Icon(Icons.Filled.Edit, "编辑") }
                         Spacer(Modifier.width(6.dp))
-                        Button(onClick = onUse) {
+                        GlassButton(
+                            onClick = onUse,
+                            backdrop = backdrop,
+                            quality = GlassQuality.High,
+                            surfaceColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
+                        ) {
                             Icon(Icons.Filled.Navigation, null)
-                            Spacer(Modifier.width(8.dp))
                             Text("设为目标")
                         }
                     }
@@ -188,10 +231,16 @@ private fun FavoriteContainerTransformCard(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EditFavoriteDialog(value: Destination, onDismiss: () -> Unit, onSave: (Destination) -> Unit) {
+private fun EditFavoriteDialog(
+    value: Destination,
+    backdrop: Backdrop,
+    onDismiss: () -> Unit,
+    onSave: (Destination) -> Unit
+) {
     var name by remember(value) { mutableStateOf(value.name) }
     var address by remember(value) { mutableStateOf(value.address) }
-    AlertDialog(
+    GlassAlertDialog(
+        backdrop = backdrop,
         onDismissRequest = onDismiss,
         title = { Text("编辑收藏") },
         text = {

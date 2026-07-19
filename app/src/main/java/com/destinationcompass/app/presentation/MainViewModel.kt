@@ -34,6 +34,7 @@ import kotlin.math.abs
 data class CompassMetrics(
     val bearing: Float = 0f,
     val heading: Float = 0f,
+    val hasHeading: Boolean = false,
     val relativeDirection: Float = 0f,
     val distanceMeters: Double? = null,
     val locationAccuracy: Float? = null,
@@ -118,6 +119,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (target == null) {
             CompassMetrics(
                 heading = trueHeading,
+                hasHeading = hasHeading,
                 relativeDirection = BearingCalculator.shortestRotation(trueHeading, 0f),
                 locationAccuracy = input.location.accuracyMeters,
                 isDirectionReliable = false
@@ -127,6 +129,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // applying live device heading so an existing arrow never freezes on the dial.
             previous.copy(
                 heading = trueHeading,
+                hasHeading = hasHeading,
                 relativeDirection = if (previous.hasTargetDirection && hasHeading) {
                     BearingCalculator.shortestRotation(trueHeading, previous.bearing)
                 } else {
@@ -145,6 +148,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             CompassMetrics(
                 bearing = bearing,
                 heading = trueHeading,
+                hasHeading = hasHeading,
                 relativeDirection = BearingCalculator.shortestRotation(trueHeading, bearing),
                 distanceMeters = BearingCalculator.distanceMeters(
                     latitude,

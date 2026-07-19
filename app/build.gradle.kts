@@ -1,4 +1,5 @@
 import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
@@ -16,14 +17,14 @@ val baiduMapApiKey = providers.gradleProperty("BAIDU_MAP_API_KEY")
 
 android {
     namespace = "com.destinationcompass.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.destinationcompass.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 36
-        versionName = "1.4.25"
+        versionCode = 38
+        versionName = "1.4.27"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -45,7 +46,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
     buildFeatures {
         compose = true
         buildConfig = true
@@ -53,8 +53,14 @@ android {
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
+}
+
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.10.00")
+    val composeBom = platform("androidx.compose:compose-bom:2026.02.00")
     implementation(composeBom)
     androidTestImplementation(composeBom)
 
@@ -69,7 +75,7 @@ dependencies {
     implementation("com.baidu.lbsyun:BaiduMapSDK_Search:7.6.4")
     implementation("com.baidu.lbsyun:BaiduMapSDK_Location:9.6.8")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.github.Dimezis:BlurView:version-3.2.0")
+    implementation("io.github.kyant0:backdrop:1.0.6")
 
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")

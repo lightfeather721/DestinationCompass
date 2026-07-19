@@ -41,9 +41,9 @@ class CompassProcessor {
     }
 
     private companion object {
-        const val FILTER_TIME_CONSTANT_SECONDS = 0.075f
-        const val MIN_SMOOTHING_FACTOR = 0.15f
-        const val MAX_SMOOTHING_FACTOR = 0.35f
+        const val FILTER_TIME_CONSTANT_SECONDS = 0.05f
+        const val MIN_SMOOTHING_FACTOR = 0.12f
+        const val MAX_SMOOTHING_FACTOR = 0.45f
         const val MIN_DELTA_SECONDS = 0.005f
         const val MAX_DELTA_SECONDS = 0.1f
         const val DEFAULT_SAMPLE_NANOS = 20_000_000L
