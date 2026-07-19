@@ -5,8 +5,8 @@
 ## 应用截图
 
 <p align="center">
-  <img src="docs/screenshots/map-picker.jpg" alt="地图选点与地点详情" width="45%" />
-  <img src="docs/screenshots/compass.jpg" alt="实时目的地方向罗盘" width="45%" />
+  <img src="docs/screenshots/IMG_20260719_22334828.jpeg" alt="地图选点与地点详情" width="45%" />
+  <img src="docs/screenshots/IMG_20260719_22332381.jpeg" alt="实时目的地方向罗盘" width="45%" />
 </p>
 
 ## 已实现
