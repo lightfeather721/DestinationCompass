@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.material.icons.Icons
@@ -147,10 +148,10 @@ fun DestinationCompassApp(viewModel: MainViewModel) {
     ) {
         Scaffold(
             containerColor = backgroundColor,
-            // Keep status-bar protection, but let page rendering continue under
-            // ColorOS' gesture area so the handle no longer sits on a blank band.
+            // Let the map render behind the status bar. Non-map pages add their
+            // own status-bar inset below so their content remains readable.
             contentWindowInsets = WindowInsets.safeDrawing.only(
-                WindowInsetsSides.Horizontal + WindowInsetsSides.Top
+                WindowInsetsSides.Horizontal
             ),
             snackbarHost = {
                 GlassSnackbarHost(
@@ -166,7 +167,15 @@ fun DestinationCompassApp(viewModel: MainViewModel) {
                 label = "Material shared axis tab transition",
                 modifier = Modifier.padding(contentPadding)
             ) { currentTab ->
-                when (currentTab) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (currentTab == AppTab.PLACES) Modifier
+                            else Modifier.statusBarsPadding()
+                        )
+                ) {
+                    when (currentTab) {
                 AppTab.PLACES -> {
                     // Only the map page observes live heading here. Keeping this collection out
                     // of the app shell prevents every sensor frame from recomposing navigation.
@@ -249,6 +258,7 @@ fun DestinationCompassApp(viewModel: MainViewModel) {
                     onUnitChange = viewModel::setUnit,
                     onLocationRefreshIntervalChange = viewModel::setLocationRefreshInterval
                 )
+                    }
                 }
             }
         }
