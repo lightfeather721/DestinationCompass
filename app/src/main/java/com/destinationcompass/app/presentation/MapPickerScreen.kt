@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -830,6 +831,7 @@ fun MapPickerScreen(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
+                    .statusBarsPadding()
                     .padding(start = 16.dp, top = 16.dp, end = 16.dp),
                 shape = searchShape,
                 blurRadius = GlassTokens.StrongBlurRadius,
@@ -869,7 +871,10 @@ fun MapPickerScreen(
             }
             AnimatedVisibility(
                 visible = !isOnline,
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = 84.dp)
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 84.dp)
             ) {
                 GlassSurface(
                     backdrop = backdrop,
@@ -891,6 +896,7 @@ fun MapPickerScreen(
                     searchResults.isEmpty() && isOnline,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
+                    .statusBarsPadding()
                     .padding(start = 16.dp, top = 84.dp, end = 16.dp)
             ) {
                 DestinationProximityNotice(
@@ -904,10 +910,11 @@ fun MapPickerScreen(
                     backdrop = backdrop,
                     shape = remember { RoundedCornerShape(18.dp) },
                     quality = GlassQuality.Balanced,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, top = 84.dp)
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(start = 16.dp, end = 16.dp, top = 84.dp)
                         .heightIn(max = 320.dp)
                 ) {
                     LazyColumn {
